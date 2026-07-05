@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+@layer components {
+  .button {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-white px-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50;
+  }
+
+  .button-primary {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-900 bg-slate-900 px-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-50;
+  }
+
+  .button-danger {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50;
+  }
+
+  .icon-button {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-slate-600 hover:border-border hover:bg-white hover:text-slate-900;
+  }
+}
