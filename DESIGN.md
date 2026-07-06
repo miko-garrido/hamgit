@@ -81,7 +81,7 @@ Dialogs and palette: `0 24px 64px rgba(15,23,42,0.2), 0 4px 12px rgba(15,23,42,0
 
 ## Layout — main window (`design/app-main.png`)
 
-- Window: 1180×760 default, min 860×520. `titleBarStyle: Overlay`, `hiddenTitle: true`, `trafficLightPosition {x:20,y:20}` (already configured in tauri.conf.json).
+- Window: 1180×760 default, min 860×520. `titleBarStyle: Overlay`, `hiddenTitle: true`, `trafficLightPosition {x:12,y:20}` (already configured in tauri.conf.json).
 - **Title bar**: 52px tall, `data-tauri-drag-region`. Left: native traffic lights occupy the space (12px lights, 8px gaps, 20px inset — leave ~80px clear). Right: two icon buttons — folder-plus (add folders) and refresh (refresh all).
 - **Table**: 16px horizontal padding from window edges. Column header row 32px: 13px medium slate-500, regular case ("Folder", "Repo ↑", "Branch", "Status", "Remote"), no background, no border. Sort indicator "↑" on the sorted column (default: Repo ascending). Hidden select-all checkbox slot (36px) keeps alignment.
 - **Columns**: checkbox 36px fixed · Folder ~340px · Repo ~160px · Branch ~140px · Status ~120px · Remote flex. Fixed-width lanes, `flex-shrink: 0`, truncation with ellipsis. Columns are user-resizable (see Column resize).
