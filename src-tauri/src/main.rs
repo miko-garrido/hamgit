@@ -43,6 +43,14 @@ struct ActionResult {
     message: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BranchInfo {
+    name: String,
+    last_commit_relative: String,
+    last_commit_unix: i64,
+}
+
 fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .arg("-C")
@@ -173,17 +181,124 @@ fn inspect_repository(folder: String) -> RepositoryState {
     inspect(&folder)
 }
 
+const BRANCH_FORMAT: &str = "%(refname:short)|%(committerdate:relative)|%(committerdate:unix)";
+const RECENT_BRANCH_CAP: usize = 20;
+
+/// Parses `for-each-ref` output using BRANCH_FORMAT into BranchInfo, stripping
+/// an optional remote prefix (e.g. "origin/") from the ref name and skipping
+/// symbolic refs like "origin/HEAD".
+fn parse_branch_lines(output: &str, strip_prefix: Option<&str>) -> Vec<BranchInfo> {
+    let mut seen = std::collections::HashSet::new();
+    let mut branches = Vec::new();
+
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.splitn(3, '|');
+        let raw_name = parts.next().unwrap_or("").trim();
+        let relative = parts.next().unwrap_or("").trim().to_string();
+        let unix = parts.next().unwrap_or("0").trim().parse::<i64>().unwrap_or(0);
+
+        let name = match strip_prefix {
+            Some(prefix) => raw_name
+                .strip_prefix(prefix)
+                .unwrap_or(raw_name)
+                .to_string(),
+            None => raw_name.to_string(),
+        };
+
+        if name.is_empty() || name == "HEAD" {
+            continue;
+        }
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+
+        branches.push(BranchInfo {
+            name,
+            last_commit_relative: relative,
+            last_commit_unix: unix,
+        });
+    }
+
+    branches
+}
+
 #[tauri::command]
-fn list_branches(folder: String) -> Result<Vec<String>, String> {
-    let output = run_git(
+fn list_recent_branches(folder: String) -> Result<Vec<BranchInfo>, String> {
+    let remote_output = run_git(
         &folder,
-        &["for-each-ref", "refs/heads", "--format=%(refname:short)"],
-    )?;
-    Ok(output
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToString::to_string)
+        &[
+            "for-each-ref",
+            "refs/remotes/origin",
+            "--sort=-committerdate",
+            &format!("--format={BRANCH_FORMAT}"),
+        ],
+    )
+    .unwrap_or_default();
+
+    let mut branches = parse_branch_lines(&remote_output, Some("origin/"));
+
+    if branches.is_empty() {
+        let local_output = run_git(
+            &folder,
+            &[
+                "for-each-ref",
+                "refs/heads",
+                "--sort=-committerdate",
+                &format!("--format={BRANCH_FORMAT}"),
+            ],
+        )?;
+        branches = parse_branch_lines(&local_output, None);
+    }
+
+    branches.truncate(RECENT_BRANCH_CAP);
+    Ok(branches)
+}
+
+#[tauri::command]
+fn search_remote_branches(folder: String, query: String) -> Result<Vec<BranchInfo>, String> {
+    // Best-effort refresh of the remote ref cache; offline should still be
+    // able to search whatever refs are already known locally.
+    let _ = Command::new("git")
+        .arg("-C")
+        .arg(&folder)
+        .args(["fetch", "origin", "--prune", "--quiet"])
+        .output();
+
+    let remote_output = run_git(
+        &folder,
+        &[
+            "for-each-ref",
+            "refs/remotes/origin",
+            "--sort=-committerdate",
+            &format!("--format={BRANCH_FORMAT}"),
+        ],
+    )
+    .unwrap_or_default();
+
+    let mut branches = parse_branch_lines(&remote_output, Some("origin/"));
+
+    if branches.is_empty() {
+        let local_output = run_git(
+            &folder,
+            &[
+                "for-each-ref",
+                "refs/heads",
+                "--sort=-committerdate",
+                &format!("--format={BRANCH_FORMAT}"),
+            ],
+        )
+        .unwrap_or_default();
+        branches = parse_branch_lines(&local_output, None);
+    }
+
+    let needle = query.to_lowercase();
+    Ok(branches
+        .into_iter()
+        .filter(|branch| branch.name.to_lowercase().contains(&needle))
         .collect())
 }
 
@@ -264,7 +379,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             inspect_repository,
-            list_branches,
+            list_recent_branches,
+            search_remote_branches,
             pull_repository,
             push_repository,
             switch_repository,

@@ -10,10 +10,12 @@ import type { ContextMenuAction } from "./components/ContextMenu";
 import { SelectionBar } from "./components/SelectionBar";
 import type { SelectionBarAction } from "./components/SelectionBar";
 import { Dialog } from "./components/Dialog";
+import { BranchPalette } from "./components/BranchPalette";
 import { errorSummary, formatList } from "./lib/format";
 import type { RepoRow, BulkActionResult } from "./types";
 
 type MenuState = { folder: string; x: number; y: number } | null;
+type PaletteState = { folder: string } | null;
 
 /** Bulk verbs share pull/push/sync semantics; refresh and remove are handled separately. */
 type BulkVerb = "pull" | "push" | "sync";
@@ -27,6 +29,7 @@ export function App() {
     pullRows,
     pushRows,
     syncRows,
+    switchBranch,
     revealInFinder,
     sortColumn,
     sortDirection,
@@ -36,6 +39,7 @@ export function App() {
   const { dialog, show, dismiss } = useDialogs();
 
   const [menu, setMenu] = useState<MenuState>(null);
+  const [palette, setPalette] = useState<PaletteState>(null);
   const [runningBarAction, setRunningBarAction] = useState<SelectionBarAction | null>(null);
 
   const isRefreshing = rows.some((row) => row.refreshing);
@@ -55,10 +59,63 @@ export function App() {
     return rows.filter((row) => set.has(row.folder));
   }
 
-  /** TODO(PR C): wire up the branch palette. */
   function onSwitchBranch(folder: string) {
-    // no-op stub for PR C
-    void folder;
+    const row = rowsFor([folder])[0];
+    if (!row) return;
+    // Conflicted repos are blocked outright, same "Can't switch" pattern as
+    // the single-repo bulk-action skip path; dirty repos get a warning
+    // instead (switching FROM detached is allowed — that's how you fix it).
+    if (row.hasConflicts) {
+      show({
+        variant: "partial",
+        title: `Can't switch ${row.repo}`,
+        body: `${row.repo} has unresolved merge conflicts. Resolve them first, or check the status icon for details.`,
+        confirmLabel: "OK",
+        onConfirm: dismiss,
+        onCancel: dismiss,
+      });
+      return;
+    }
+    setPalette({ folder });
+  }
+
+  async function performSwitch(folder: string, branch: string) {
+    const result = await switchBranch(folder, branch);
+    if (!result.ok) {
+      const row = rowsFor([folder])[0];
+      show({
+        variant: "error",
+        title: `Switch failed for ${row?.repo ?? folder}`,
+        body: errorSummary("switch", result.message),
+        detail: result.message,
+        confirmLabel: "Retry switch",
+        onConfirm: () => {
+          dismiss();
+          void performSwitch(folder, branch);
+        },
+        onCancel: dismiss,
+      });
+    }
+  }
+
+  function onPaletteSelect(folder: string, branch: string) {
+    setPalette(null);
+    const row = rowsFor([folder])[0];
+    if (row?.isDirty) {
+      show({
+        variant: "warning",
+        title: `${row.repo} has uncommitted changes`,
+        body: `Switching to ${branch} will carry your local edits over to the new branch. Commit or stash first if you want a clean switch.`,
+        confirmLabel: "Switch anyway",
+        onConfirm: () => {
+          dismiss();
+          void performSwitch(folder, branch);
+        },
+        onCancel: dismiss,
+      });
+      return;
+    }
+    void performSwitch(folder, branch);
   }
 
   function removeAndDeselect(folders: string[]) {
@@ -274,6 +331,21 @@ export function App() {
         onAction={handleBarAction}
         onClear={clear}
       />
+
+      {palette &&
+        (() => {
+          const row = rowsFor([palette.folder])[0];
+          if (!row) return null;
+          return (
+            <BranchPalette
+              repo={row.repo}
+              folder={row.folder}
+              currentBranch={row.branch}
+              onSelect={(branch) => onPaletteSelect(row.folder, branch)}
+              onClose={() => setPalette(null)}
+            />
+          );
+        })()}
 
       {dialog && <Dialog spec={dialog} onDismiss={dismiss} />}
     </main>

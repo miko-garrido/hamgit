@@ -37,6 +37,12 @@ export type ActionResult = {
   message: string;
 };
 
+export type BranchInfo = {
+  name: string;
+  lastCommitRelative: string;
+  lastCommitUnix: number;
+};
+
 export type SortColumn = "folder" | "repo" | "branch";
 export type SortDirection = "asc" | "desc";
 

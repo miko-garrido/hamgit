@@ -232,25 +232,27 @@ export function useRepos() {
     [bulkAction, updateRow],
   );
 
-  const switchRows = useCallback(async (targetRows: RepoRow[], branch: string, allowDetached = false) => {
-    const allowed = targetRows.filter(
-      (row) =>
-        !row.isDirty &&
-        !row.hasConflicts &&
-        (allowDetached || !row.isDetached) &&
-        row.status !== "Error",
-    );
-    await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
-      updateRow(row.folder, { acting: true, actingVerb: "switch", note: `Switching to ${branch}…` });
-      const result = await invoke<ActionResult>("switch_repository", {
-        folder: row.folder,
-        branch,
-      });
-      updateRow(row.folder, { acting: false, actingVerb: null, note: result.message });
-      await refreshFolders([row.folder]);
-    });
-    return { skipped: targetRows.length - allowed.length };
-  }, [updateRow, refreshFolders]);
+  /**
+   * Single-repo branch switch (Principle 3: no bulk branch change). Callers
+   * are responsible for the dirty-repo warning dialog before calling this;
+   * conflicted repos are blocked by the caller with a "Can't switch" message.
+   */
+  const switchBranch = useCallback(
+    async (folder: string, branch: string): Promise<ActionResult> => {
+      updateRow(folder, { acting: true, actingVerb: "switch", note: `Switching to ${branch}…` });
+      try {
+        const result = await invoke<ActionResult>("switch_repository", { folder, branch });
+        updateRow(folder, { acting: false, actingVerb: null, note: result.message });
+        await refreshFolders([folder]);
+        return result;
+      } catch (error) {
+        const message = String(error);
+        updateRow(folder, { acting: false, actingVerb: null, note: message });
+        return { ok: false, message };
+      }
+    },
+    [updateRow, refreshFolders],
+  );
 
   const revealInFinder = useCallback(async (folder: string) => {
     const result = await invoke<ActionResult>("reveal_in_finder", { folder });
@@ -289,7 +291,7 @@ export function useRepos() {
     pullRows,
     pushRows,
     syncRows,
-    switchRows,
+    switchBranch,
     revealInFinder,
     sortColumn,
     sortDirection,
