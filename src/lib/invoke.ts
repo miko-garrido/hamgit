@@ -102,6 +102,33 @@ const MOCK_BRANCHES: Record<string, string[]> = {
 
 let mockFolderCounter = 0;
 
+/** Realistic git auth failure used to exercise the error-dialog path. */
+const AUTH_ERROR = "fatal: could not read Username for 'https://github.com': terminal prompts disabled";
+
+/** Repos whose pull/push always fail, to exercise error/partial dialogs in the mock. */
+// hamgit is Clean (action-eligible), so its failure actually reaches the error
+// dialog; dorxata-api is Conflict and only ever exercises the skip path.
+const FAILING_FOLDERS = new Set([
+  "/Users/miko/Projects/dorxata-api",
+  "/Users/miko/Projects/hamgit",
+]);
+
+function aheadBehindOf(remote: RepositoryState["remote"]): { ahead: number; behind: number } {
+  if (remote === "upToDate" || remote === "noUpstream" || remote === "unknown") {
+    return { ahead: 0, behind: 0 };
+  }
+  if ("ahead" in remote) return { ahead: remote.ahead, behind: 0 };
+  if ("behind" in remote) return { ahead: 0, behind: remote.behind };
+  return { ahead: remote.aheadBehind.ahead, behind: remote.aheadBehind.behind };
+}
+
+function remoteFrom(ahead: number, behind: number): RepositoryState["remote"] {
+  if (ahead === 0 && behind === 0) return "upToDate";
+  if (ahead > 0 && behind === 0) return { ahead };
+  if (ahead === 0 && behind > 0) return { behind };
+  return { aheadBehind: { ahead, behind } };
+}
+
 async function mockInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   await delay();
 
@@ -129,14 +156,32 @@ async function mockInvoke<T>(command: string, args?: Record<string, unknown>): P
       return MOCK_BRANCHES.default as unknown as T;
     }
     case "pull_repository": {
+      const folder = String(args?.folder ?? "");
+      if (FAILING_FOLDERS.has(folder)) {
+        return { ok: false, message: AUTH_ERROR } as unknown as T;
+      }
+      const seed = MOCK_REPOS[folder];
+      if (seed) {
+        const { ahead, behind } = aheadBehindOf(seed.remote);
+        seed.remote = remoteFrom(ahead, 0);
+      }
       return { ok: true, message: "Already up to date." } as unknown as T;
+    }
+    case "push_repository": {
+      const folder = String(args?.folder ?? "");
+      if (FAILING_FOLDERS.has(folder)) {
+        return { ok: false, message: AUTH_ERROR } as unknown as T;
+      }
+      const seed = MOCK_REPOS[folder];
+      if (seed) {
+        const { behind } = aheadBehindOf(seed.remote);
+        seed.remote = remoteFrom(0, behind);
+      }
+      return { ok: true, message: "Pushed to origin." } as unknown as T;
     }
     case "switch_repository": {
       const branch = String(args?.branch ?? "main");
       return { ok: true, message: `Switched to branch '${branch}'` } as unknown as T;
-    }
-    case "open_in_vscode": {
-      return { ok: true, message: "Opened in VS Code" } as unknown as T;
     }
     case "reveal_in_finder": {
       return { ok: true, message: "Revealed in Finder" } as unknown as T;
