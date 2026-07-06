@@ -146,7 +146,7 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
             placeholder={`Switch ${repo} to branch…`}
             className="h-full min-w-0 flex-1 bg-transparent text-base text-foreground placeholder:text-slate-400 focus:outline-none"
           />
-          <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[11px] text-slate-500">
+          <span className="shrink-0 rounded-[4px] border border-border px-1.5 py-0.5 text-[11px] text-slate-500">
             esc
           </span>
         </div>
