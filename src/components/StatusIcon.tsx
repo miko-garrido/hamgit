@@ -1,3 +1,5 @@
+import { forwardRef } from "react";
+import { Tooltip } from "./Tooltip";
 import type { StatusLabel } from "../types";
 
 type Props = {
@@ -16,21 +18,31 @@ const TOOLTIPS: Record<StatusLabel, string> = {
 /**
  * 18px filled status icons per DESIGN.md. Colors come from the status-*
  * CSS variables; glyph strokes are white (a sanctioned hardcoded exception).
+ * Name + meaning surfaces via the shared Tooltip rather than a native title=.
  */
 export function StatusIcon({ status, errorMessage }: Props) {
-  const title =
-    status === "Error" && errorMessage ? `Error — ${errorMessage}` : TOOLTIPS[status];
+  const label = status === "Error" && errorMessage ? `Error — ${errorMessage}` : TOOLTIPS[status];
 
   return (
-    <span title={title} className="inline-flex h-[18px] w-[18px] shrink-0" aria-label={title}>
-      {status === "Clean" && <CleanIcon />}
-      {status === "Dirty" && <DirtyIcon />}
-      {status === "Conflict" && <ConflictIcon />}
-      {status === "Detached" && <DetachedIcon />}
-      {status === "Error" && <ErrorIcon />}
-    </span>
+    <Tooltip label={label}>
+      <StatusIconGlyph status={status} label={label} />
+    </Tooltip>
   );
 }
+
+const StatusIconGlyph = forwardRef<HTMLSpanElement, { status: StatusLabel; label: string }>(
+  function StatusIconGlyph({ status, label, ...rest }, ref) {
+    return (
+      <span ref={ref} aria-label={label} className="inline-flex h-[18px] w-[18px] shrink-0" {...rest}>
+        {status === "Clean" && <CleanIcon />}
+        {status === "Dirty" && <DirtyIcon />}
+        {status === "Conflict" && <ConflictIcon />}
+        {status === "Detached" && <DetachedIcon />}
+        {status === "Error" && <ErrorIcon />}
+      </span>
+    );
+  },
+);
 
 function CleanIcon() {
   return (

@@ -1,7 +1,10 @@
 import { Check, Loader2 } from "lucide-react";
 import { StatusIcon } from "./StatusIcon";
+import { Tooltip } from "./Tooltip";
+import { TruncatedBranch } from "./TruncatedBranch";
 import { folderDisplay, remoteDisplay, remoteTooltip } from "../lib/format";
 import type { RepoRow as RepoRowType } from "../types";
+import type { ColumnWidths } from "../hooks/useColumnWidths";
 
 type Props = {
   row: RepoRowType;
@@ -11,6 +14,7 @@ type Props = {
   onToggle: (folder: string) => void;
   onRowClick: (folder: string, event: React.MouseEvent) => void;
   onContextMenu?: (folder: string, event: React.MouseEvent) => void;
+  widths: ColumnWidths;
 };
 
 /**
@@ -18,7 +22,16 @@ type Props = {
  * corners round 6px, shared inner edges stay square. Hover never merges
  * with a neighboring selection (it renders its own independent fill).
  */
-export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle, onRowClick, onContextMenu }: Props) {
+export function RepoRow({
+  row,
+  isSelected,
+  prevSelected,
+  nextSelected,
+  onToggle,
+  onRowClick,
+  onContextMenu,
+  widths,
+}: Props) {
   const radiusTop = isSelected && !prevSelected;
   const radiusBottom = isSelected && !nextSelected;
 
@@ -56,18 +69,24 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
         </button>
       </div>
 
-      <div
-        className="w-[340px] shrink-0 truncate pr-3 font-mono text-xs text-foreground"
-        title={row.folder}
-      >
-        {folderDisplay(row.folder)}
+      <div style={{ width: widths.folder }} className="shrink-0 truncate pr-3">
+        <Tooltip label={row.folder} mono>
+          <span className="block truncate font-mono text-xs text-foreground">
+            {folderDisplay(row.folder)}
+          </span>
+        </Tooltip>
       </div>
 
-      <div className="w-[160px] shrink-0 truncate pr-3 text-base font-medium" title={row.repo}>
-        {row.repo}
+      <div style={{ width: widths.repo }} className="shrink-0 truncate pr-3">
+        {/* Repo tooltip: owner/repo when available, else repo name. There is
+            no origin data source yet (see lib/format.ts ownerRepoFromOrigin),
+            so this falls back to the repo name for now. */}
+        <Tooltip label={row.repo}>
+          <span className="block truncate text-base font-medium">{row.repo}</span>
+        </Tooltip>
       </div>
 
-      <div className="w-[140px] shrink-0 truncate pr-3 font-mono text-xs text-foreground" title={row.loaded ? branchLabel : undefined}>
+      <div style={{ width: widths.branch }} className="shrink-0 truncate pr-3 font-mono text-xs text-foreground">
         {!row.loaded ? (
           <span className="text-slate-400">–</span>
         ) : row.acting && row.actingVerb === "switch" ? (
@@ -76,7 +95,7 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
             {row.note}
           </span>
         ) : (
-          branchLabel
+          <TruncatedBranch className="block truncate">{branchLabel}</TruncatedBranch>
         )}
       </div>
 
@@ -88,10 +107,7 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
         )}
       </div>
 
-      <div
-        className="flex min-w-0 flex-1 items-center truncate pr-2 text-xs text-slate-500"
-        title={row.loaded ? remoteTooltip(row.remote) : undefined}
-      >
+      <div className="flex min-w-0 flex-1 items-center truncate pr-2 text-xs text-slate-500">
         {!row.loaded ? (
           ""
         ) : row.acting && (row.actingVerb === "pull" || row.actingVerb === "push" || row.actingVerb === "sync") ? (
@@ -100,7 +116,9 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
             {row.actingVerb === "pull" ? "Pulling…" : row.actingVerb === "push" ? "Pushing…" : "Syncing…"}
           </span>
         ) : (
-          remoteDisplay(row.remote)
+          <Tooltip label={remoteTooltip(row.remote)}>
+            <span className="block truncate">{remoteDisplay(row.remote)}</span>
+          </Tooltip>
         )}
       </div>
     </div>

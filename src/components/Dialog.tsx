@@ -81,13 +81,13 @@ export function Dialog({ spec, onDismiss }: { spec: DialogSpec; onDismiss: () =>
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="animate-dialog-scrim fixed inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: "rgba(30,41,59,0.18)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) handleCancel();
       }}
     >
-      <div className="w-[420px] rounded-2xl bg-surface p-5 shadow-dialog">
+      <div className="animate-dialog-card w-[420px] rounded-2xl bg-surface p-5 shadow-dialog">
         <div className="mb-3 flex items-center gap-3">
           <span
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${BADGE_STYLES[spec.variant]}`}
