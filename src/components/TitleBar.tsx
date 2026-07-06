@@ -13,6 +13,12 @@ type Props = {
  * macOS traffic lights (trafficLightPosition is {x:20,y:20} in
  * tauri.conf.json). Interactive children must NOT inherit the drag region,
  * so the button wrapper opts out explicitly.
+ *
+ * `data-tauri-drag-region` only starts a drag when the mousedown event's
+ * TARGET is an element carrying the attribute — it does not "leak" from a
+ * parent to plain children. The left spacer below is an empty div that
+ * covers most of the bar's width, so it must carry the attribute itself or
+ * clicks/drags on that area would be swallowed silently.
  */
 export function TitleBar({ onAdd, onRefreshAll, refreshDisabled, refreshing }: Props) {
   return (
@@ -20,7 +26,7 @@ export function TitleBar({ onAdd, onRefreshAll, refreshDisabled, refreshing }: P
       data-tauri-drag-region
       className="flex h-[52px] shrink-0 items-center justify-between pl-20 pr-3"
     >
-      <div />
+      <div data-tauri-drag-region className="h-full flex-1" />
       <div className="flex items-center gap-1" style={{ pointerEvents: "auto" }}>
         <IconButton icon={FolderPlus} label="Add folders" onClick={onAdd} />
         <IconButton

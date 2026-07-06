@@ -32,6 +32,10 @@ export function Tooltip({ label, mono, placement = "bottom", disabled, children 
   const anchorRef = useRef<HTMLElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number | null>(null);
+  /** Pointer x while waiting for the delay/visible tooltip; null for keyboard focus. */
+  const pointerXRef = useRef<number | null>(null);
+  /** Frozen once the tooltip becomes visible so it doesn't chase the cursor. */
+  const frozenPointerXRef = useRef<number | null>(null);
 
   function clearTimer() {
     if (timerRef.current !== null) {
@@ -46,10 +50,12 @@ export function Tooltip({ label, mono, placement = "bottom", disabled, children 
     const warm = now - lastHideAt < WARM_WINDOW_MS;
     clearTimer();
     if (warm) {
+      frozenPointerXRef.current = pointerXRef.current;
       setVisible(true);
       return;
     }
     timerRef.current = window.setTimeout(() => {
+      frozenPointerXRef.current = pointerXRef.current;
       setVisible(true);
     }, HOVER_DELAY_MS);
   }
@@ -58,6 +64,8 @@ export function Tooltip({ label, mono, placement = "bottom", disabled, children 
     clearTimer();
     if (visible) lastHideAt = Date.now();
     setVisible(false);
+    pointerXRef.current = null;
+    frozenPointerXRef.current = null;
   }
 
   useEffect(() => () => clearTimer(), []);
@@ -71,7 +79,12 @@ export function Tooltip({ label, mono, placement = "bottom", disabled, children 
     const gap = 4;
     const margin = 8;
 
-    let left = anchorRect.left + anchorRect.width / 2 - width / 2;
+    // Center on the pointer's x-position when we have one (mouse hover);
+    // fall back to anchor-centered for keyboard focus, which has no pointer.
+    const centerX =
+      frozenPointerXRef.current ?? anchorRect.left + anchorRect.width / 2;
+
+    let left = centerX - width / 2;
     left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
 
     const top = placement === "top" ? anchorRect.top - height - gap : anchorRect.bottom + gap;
@@ -92,7 +105,15 @@ export function Tooltip({ label, mono, placement = "bottom", disabled, children 
     },
     onMouseEnter: (event: React.MouseEvent) => {
       child.props.onMouseEnter?.(event);
+      pointerXRef.current = event.clientX;
       show();
+    },
+    onMouseMove: (event: React.MouseEvent) => {
+      child.props.onMouseMove?.(event);
+      // Track the live cursor position while waiting for the delay so the
+      // eventual tooltip anchors where the pointer actually is. Once visible
+      // (frozenPointerXRef is set in show()), this no longer affects layout.
+      pointerXRef.current = event.clientX;
     },
     onMouseLeave: (event: React.MouseEvent) => {
       child.props.onMouseLeave?.(event);
@@ -100,6 +121,7 @@ export function Tooltip({ label, mono, placement = "bottom", disabled, children 
     },
     onFocus: (event: React.FocusEvent) => {
       child.props.onFocus?.(event);
+      pointerXRef.current = null;
       show();
     },
     onBlur: (event: React.FocusEvent) => {
