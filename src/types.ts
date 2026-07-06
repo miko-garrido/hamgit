@@ -21,7 +21,8 @@ export type RepositoryState = {
 };
 
 export type RepoRow = RepositoryState & {
-  selected: boolean;
+  /** False until the first inspect resolves; the row shows a loading state. */
+  loaded: boolean;
   refreshing: boolean;
   acting: boolean;
   note: string | null;

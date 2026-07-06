@@ -29,10 +29,10 @@ function pendingRow(folder: string): RepoRow {
     hasConflicts: false,
     isDetached: false,
     error: null,
-    selected: false,
+    loaded: false,
     refreshing: false,
     acting: false,
-    note: "Pending refresh",
+    note: null,
   };
 }
 
@@ -53,19 +53,18 @@ async function runLimited<T>(
 }
 
 export function useRepos() {
-  const [rows, setRows] = useState<RepoRow[]>([]);
+  // Lazy init: rows must be seeded from storage before the persist effect can
+  // ever run, otherwise a mount with empty state wipes the saved repo list.
+  const [rows, setRows] = useState<RepoRow[]>(() => loadFolders().map(pendingRow));
   const [sortColumn, setSortColumn] = useState<SortColumn>("repo");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const refreshInFlight = useRef(false);
 
+  const folders = useMemo(() => rows.map((row) => row.folder), [rows]);
+  const foldersKey = useMemo(() => JSON.stringify(folders), [folders]);
   useEffect(() => {
-    const folders = loadFolders();
-    setRows(folders.map(pendingRow));
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.map((row) => row.folder)));
-  }, [rows]);
+    localStorage.setItem(STORAGE_KEY, foldersKey);
+  }, [foldersKey]);
 
   const updateRow = useCallback((folder: string, patch: Partial<RepoRow>) => {
     setRows((current) =>
@@ -83,12 +82,13 @@ export function useRepos() {
         setRows((current) =>
           current.map((row) =>
             row.folder === folder
-              ? { ...row, ...state, refreshing: false, note: state.error }
+              ? { ...row, ...state, loaded: true, refreshing: false, note: state.error }
               : row,
           ),
         );
       } catch (error) {
         updateRow(folder, {
+          loaded: true,
           refreshing: false,
           status: "Error",
           remote: "unknown",

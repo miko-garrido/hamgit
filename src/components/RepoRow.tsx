@@ -1,6 +1,6 @@
-import { Check } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { StatusIcon } from "./StatusIcon";
-import { folderDisplay, ownerRepoFromOrigin, remoteDisplay, remoteTooltip } from "../lib/format";
+import { folderDisplay, remoteDisplay, remoteTooltip } from "../lib/format";
 import type { RepoRow as RepoRowType } from "../types";
 
 type Props = {
@@ -27,7 +27,6 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
     : undefined;
 
   const branchLabel = row.isDetached ? "Detached" : row.branch ?? "-";
-  const ownerRepo = ownerRepoFromOrigin(null);
 
   return (
     <div
@@ -64,12 +63,14 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
         {folderDisplay(row.folder)}
       </div>
 
-      <div className="w-[160px] shrink-0 truncate pr-3 text-base font-medium" title={ownerRepo ?? row.repo}>
+      <div className="w-[160px] shrink-0 truncate pr-3 text-base font-medium" title={row.repo}>
         {row.repo}
       </div>
 
-      <div className="w-[140px] shrink-0 truncate pr-3 font-mono text-xs text-foreground" title={branchLabel}>
-        {row.acting && row.note?.startsWith("Switching") ? (
+      <div className="w-[140px] shrink-0 truncate pr-3 font-mono text-xs text-foreground" title={row.loaded ? branchLabel : undefined}>
+        {!row.loaded ? (
+          <span className="text-slate-400">–</span>
+        ) : row.acting && row.note?.startsWith("Switching") ? (
           <span className="text-slate-500">{row.note}</span>
         ) : (
           branchLabel
@@ -77,14 +78,22 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
       </div>
 
       <div className="flex w-[120px] shrink-0 items-center pr-3">
-        <StatusIcon status={row.status} errorMessage={row.error} />
+        {row.loaded ? (
+          <StatusIcon status={row.status} errorMessage={row.error} />
+        ) : (
+          <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-label="Loading" />
+        )}
       </div>
 
       <div
         className="min-w-0 flex-1 truncate pr-2 text-xs text-slate-500"
-        title={remoteTooltip(row.remote)}
+        title={row.loaded ? remoteTooltip(row.remote) : undefined}
       >
-        {row.acting && row.note?.startsWith("Pulling") ? row.note : remoteDisplay(row.remote)}
+        {!row.loaded
+          ? ""
+          : row.acting && row.note?.startsWith("Pulling")
+            ? row.note
+            : remoteDisplay(row.remote)}
       </div>
     </div>
   );
