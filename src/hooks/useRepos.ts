@@ -252,12 +252,6 @@ export function useRepos() {
     return { skipped: targetRows.length - allowed.length };
   }, [updateRow, refreshFolders]);
 
-  const openInVSCode = useCallback(async (folder: string) => {
-    const result = await invoke<ActionResult>("open_in_vscode", { folder });
-    updateRow(folder, { note: result.message });
-    return result;
-  }, [updateRow]);
-
   const revealInFinder = useCallback(async (folder: string) => {
     const result = await invoke<ActionResult>("reveal_in_finder", { folder });
     updateRow(folder, { note: result.message });
@@ -296,7 +290,6 @@ export function useRepos() {
     pushRows,
     syncRows,
     switchRows,
-    openInVSCode,
     revealInFinder,
     sortColumn,
     sortDirection,

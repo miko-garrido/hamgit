@@ -10,6 +10,7 @@ import type { ContextMenuAction } from "./components/ContextMenu";
 import { SelectionBar } from "./components/SelectionBar";
 import type { SelectionBarAction } from "./components/SelectionBar";
 import { Dialog } from "./components/Dialog";
+import { errorSummary, formatList } from "./lib/format";
 import type { RepoRow, BulkActionResult } from "./types";
 
 type MenuState = { folder: string; x: number; y: number } | null;
@@ -116,7 +117,7 @@ export function App() {
       show({
         variant: "error",
         title: `${verb[0].toUpperCase()}${verb.slice(1)} failed for ${first.repo}`,
-        body: "origin rejected the request: authentication required. Check your credentials for github.com and try again.",
+        body: errorSummary(verb, first.message),
         detail: first.message,
         confirmLabel: `Retry ${verb}`,
         onConfirm: () => {
@@ -142,7 +143,7 @@ export function App() {
         return;
       }
 
-      const names = skipped.map((entry) => entry.repo).join(" and ");
+      const names = formatList(skipped.map((entry) => entry.repo));
       const reasonSummary =
         new Set(skipped.map((entry) => entry.reason)).size === 1
           ? `they have ${skipped[0].reason}`
@@ -175,6 +176,9 @@ export function App() {
     if (!menu) return;
     const folder = menu.folder;
     const targetRows = rowsFor([folder]);
+    // A row already running an action must not start a second one — a push
+    // overwriting a mid-flight sync would break its pull-then-push atomicity.
+    if (targetRows.some((row) => row.acting) && action !== "reveal") return;
 
     switch (action) {
       case "refresh":
@@ -202,6 +206,9 @@ export function App() {
   }
 
   async function handleBarAction(action: SelectionBarAction) {
+    // Guard against double-fire: a second click can land before React
+    // re-renders the bar with its buttons disabled.
+    if (runningBarAction !== null) return;
     const folders = Array.from(selected);
     if (folders.length === 0) return;
     const targetRows = rowsFor(folders);

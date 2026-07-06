@@ -242,30 +242,6 @@ fn switch_repository(folder: String, branch: String) -> ActionResult {
 }
 
 #[tauri::command]
-fn open_in_vscode(folder: String) -> ActionResult {
-    let result = Command::new("code").arg(&folder).status().or_else(|_| {
-        Command::new("open")
-            .args(["-a", "Visual Studio Code", &folder])
-            .status()
-    });
-
-    match result {
-        Ok(status) if status.success() => ActionResult {
-            ok: true,
-            message: "Opened in VS Code".to_string(),
-        },
-        Ok(status) => ActionResult {
-            ok: false,
-            message: format!("VS Code exited with status {status}"),
-        },
-        Err(error) => ActionResult {
-            ok: false,
-            message: error.to_string(),
-        },
-    }
-}
-
-#[tauri::command]
 fn reveal_in_finder(folder: String) -> ActionResult {
     match Command::new("open").args(["-R", &folder]).status() {
         Ok(status) if status.success() => ActionResult {
@@ -292,7 +268,6 @@ fn main() {
             pull_repository,
             push_repository,
             switch_repository,
-            open_in_vscode,
             reveal_in_finder
         ])
         .run(tauri::generate_context!())

@@ -183,9 +183,6 @@ async function mockInvoke<T>(command: string, args?: Record<string, unknown>): P
       const branch = String(args?.branch ?? "main");
       return { ok: true, message: `Switched to branch '${branch}'` } as unknown as T;
     }
-    case "open_in_vscode": {
-      return { ok: true, message: "Opened in VS Code" } as unknown as T;
-    }
     case "reveal_in_finder": {
       return { ok: true, message: "Revealed in Finder" } as unknown as T;
     }
