@@ -206,6 +206,24 @@ fn pull_repository(folder: String) -> ActionResult {
 }
 
 #[tauri::command]
+fn push_repository(folder: String) -> ActionResult {
+    match run_git(&folder, &["push"]) {
+        Ok(output) => ActionResult {
+            ok: true,
+            message: if output.is_empty() {
+                "Pushed".to_string()
+            } else {
+                output
+            },
+        },
+        Err(error) => ActionResult {
+            ok: false,
+            message: error,
+        },
+    }
+}
+
+#[tauri::command]
 fn switch_repository(folder: String, branch: String) -> ActionResult {
     match run_git(&folder, &["switch", &branch]) {
         Ok(output) => ActionResult {
@@ -272,6 +290,7 @@ fn main() {
             inspect_repository,
             list_branches,
             pull_repository,
+            push_repository,
             switch_repository,
             open_in_vscode,
             reveal_in_finder
