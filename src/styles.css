@@ -66,3 +66,147 @@ button,
 input {
   font: inherit;
 }
+
+/*
+ * Motion per DESIGN.md "Motion". Enter animations only run under
+ * prefers-reduced-motion: no-preference; the reduced-motion branch below
+ * replaces movement with plain instant/fade behavior. Hover/pressed states
+ * and tooltips are never animated (per spec they are instant).
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes dialog-scrim-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes dialog-card-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes palette-scrim-in {
+    from {
+      opacity: 0;
+      backdrop-filter: blur(0px);
+    }
+    to {
+      opacity: 1;
+      backdrop-filter: blur(6px);
+    }
+  }
+
+  @keyframes palette-card-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes selection-bar-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, 16px);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  }
+
+  @keyframes selection-bar-out {
+    from {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    to {
+      opacity: 0;
+      transform: translate(-50%, 16px);
+    }
+  }
+
+  @keyframes count-crossfade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .animate-dialog-scrim {
+    animation: dialog-scrim-in 150ms ease-out both;
+  }
+
+  .animate-dialog-card {
+    animation: dialog-card-in 180ms ease-out both;
+  }
+
+  .animate-palette-scrim {
+    animation: palette-scrim-in 160ms ease-out both;
+  }
+
+  .animate-palette-card {
+    animation: palette-card-in 160ms ease-out both;
+  }
+
+  .animate-selection-bar-in {
+    animation: selection-bar-in 200ms ease-out both;
+  }
+
+  .animate-selection-bar-out {
+    animation: selection-bar-out 150ms ease-in both;
+  }
+
+  .animate-count-crossfade {
+    animation: count-crossfade 100ms ease-out both;
+  }
+}
+
+/*
+ * Reduced motion: replace movement with a plain, fast fade (no translate or
+ * scale) per DESIGN.md "Motion" -> "Honor prefers-reduced-motion by
+ * replacing movement with plain fades."
+ */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .animate-dialog-scrim,
+  .animate-dialog-card,
+  .animate-palette-scrim,
+  .animate-palette-card,
+  .animate-selection-bar-in,
+  .animate-count-crossfade {
+    animation: fade-in 100ms ease-out both;
+  }
+
+  .animate-selection-bar-out {
+    animation: fade-in 100ms ease-out both reverse;
+  }
+}
+
+/* Spinners: 360deg / 0.8s linear per DESIGN.md "Motion", overriding
+   Tailwind's default 1s animate-spin duration. */
+.animate-spin {
+  animation-duration: 0.8s;
+}
