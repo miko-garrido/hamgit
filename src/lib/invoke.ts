@@ -1,4 +1,4 @@
-import type { ActionResult, RepositoryState } from "../types";
+import type { ActionResult, BranchInfo, RepositoryState } from "../types";
 
 declare global {
   interface Window {
@@ -96,9 +96,29 @@ const MOCK_REPOS: Record<string, RepositoryState> = {
   },
 };
 
-const MOCK_BRANCHES: Record<string, string[]> = {
-  default: ["main", "develop", "feature/table-actions", "release/2.4", "fix/remote-parsing"],
-};
+/** Recent-on-origin branches shown when the palette first opens. */
+const MOCK_RECENT_BRANCHES: BranchInfo[] = [
+  { name: "main", lastCommitRelative: "2h ago", lastCommitUnix: 0 },
+  { name: "release/2.4", lastCommitRelative: "1d ago", lastCommitUnix: 0 },
+  { name: "feature/push-notifications", lastCommitRelative: "3d ago", lastCommitUnix: 0 },
+  { name: "fix/login-crash", lastCommitRelative: "5d ago", lastCommitUnix: 0 },
+  { name: "chore/deps-bump", lastCommitRelative: "2w ago", lastCommitUnix: 0 },
+];
+
+/**
+ * Larger hidden branch set searched by search_remote_branches, so the
+ * Enter -> search flow can surface branches absent from the recents list
+ * (e.g. "fix/auth-retry"), and a query matching nothing exercises the
+ * no-matches state.
+ */
+const MOCK_ALL_BRANCHES: BranchInfo[] = [
+  ...MOCK_RECENT_BRANCHES,
+  { name: "fix/auth-retry", lastCommitRelative: "4w ago", lastCommitUnix: 0 },
+  { name: "fix/session-restore", lastCommitRelative: "3w ago", lastCommitUnix: 0 },
+  { name: "feature/table-actions", lastCommitRelative: "6w ago", lastCommitUnix: 0 },
+  { name: "develop", lastCommitRelative: "8w ago", lastCommitUnix: 0 },
+  { name: "fix/remote-parsing", lastCommitRelative: "10w ago", lastCommitUnix: 0 },
+];
 
 let mockFolderCounter = 0;
 
@@ -152,8 +172,15 @@ async function mockInvoke<T>(command: string, args?: Record<string, unknown>): P
         error: null,
       } as unknown as T;
     }
-    case "list_branches": {
-      return MOCK_BRANCHES.default as unknown as T;
+    case "list_recent_branches": {
+      return MOCK_RECENT_BRANCHES.map((branch) => ({ ...branch })) as unknown as T;
+    }
+    case "search_remote_branches": {
+      const query = String(args?.query ?? "").toLowerCase();
+      if (!query) return [] as unknown as T;
+      return MOCK_ALL_BRANCHES.filter((branch) =>
+        branch.name.toLowerCase().includes(query),
+      ).map((branch) => ({ ...branch })) as unknown as T;
     }
     case "pull_repository": {
       const folder = String(args?.folder ?? "");
@@ -180,7 +207,20 @@ async function mockInvoke<T>(command: string, args?: Record<string, unknown>): P
       return { ok: true, message: "Pushed to origin." } as unknown as T;
     }
     case "switch_repository": {
+      const folder = String(args?.folder ?? "");
       const branch = String(args?.branch ?? "main");
+      if (branch === "fix/remote-parsing") {
+        return {
+          ok: false,
+          message: "error: pathspec 'fix/remote-parsing' did not match any file(s) known to git",
+        } as unknown as T;
+      }
+      const seed = MOCK_REPOS[folder];
+      if (seed) {
+        seed.branch = branch;
+        seed.isDetached = false;
+        seed.status = seed.hasConflicts ? "Conflict" : seed.isDirty ? "Dirty" : "Clean";
+      }
       return { ok: true, message: `Switched to branch '${branch}'` } as unknown as T;
     }
     case "reveal_in_finder": {
