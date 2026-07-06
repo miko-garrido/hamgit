@@ -70,8 +70,11 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
       <div className="w-[140px] shrink-0 truncate pr-3 font-mono text-xs text-foreground" title={row.loaded ? branchLabel : undefined}>
         {!row.loaded ? (
           <span className="text-slate-400">–</span>
-        ) : row.acting && row.note?.startsWith("Switching") ? (
-          <span className="text-slate-500">{row.note}</span>
+        ) : row.acting && row.actingVerb === "switch" ? (
+          <span className="flex items-center gap-1.5 text-slate-500">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {row.note}
+          </span>
         ) : (
           branchLabel
         )}
@@ -86,14 +89,19 @@ export function RepoRow({ row, isSelected, prevSelected, nextSelected, onToggle,
       </div>
 
       <div
-        className="min-w-0 flex-1 truncate pr-2 text-xs text-slate-500"
+        className="flex min-w-0 flex-1 items-center truncate pr-2 text-xs text-slate-500"
         title={row.loaded ? remoteTooltip(row.remote) : undefined}
       >
-        {!row.loaded
-          ? ""
-          : row.acting && row.note?.startsWith("Pulling")
-            ? row.note
-            : remoteDisplay(row.remote)}
+        {!row.loaded ? (
+          ""
+        ) : row.acting && (row.actingVerb === "pull" || row.actingVerb === "push" || row.actingVerb === "sync") ? (
+          <span className="flex items-center gap-1.5">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {row.actingVerb === "pull" ? "Pulling…" : row.actingVerb === "push" ? "Pushing…" : "Syncing…"}
+          </span>
+        ) : (
+          remoteDisplay(row.remote)
+        )}
       </div>
     </div>
   );

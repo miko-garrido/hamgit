@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, pickDirectories } from "../lib/invoke";
 import { folderName } from "../lib/format";
-import type { ActionResult, RepoRow, RepositoryState, SortColumn, SortDirection } from "../types";
+import type {
+  ActionResult,
+  BulkActionResult,
+  RepoRow,
+  RepositoryState,
+  SortColumn,
+  SortDirection,
+} from "../types";
 
 const STORAGE_KEY = "hamgit.repositories";
 const REFRESH_CONCURRENCY = 6;
@@ -32,8 +39,22 @@ function pendingRow(folder: string): RepoRow {
     loaded: false,
     refreshing: false,
     acting: false,
+    actingVerb: null,
     note: null,
   };
+}
+
+/** Bulk pull/push/sync eligibility per DESIGN.md: skip dirty/conflict/detached/error repos. */
+function isEligible(row: RepoRow): boolean {
+  return !row.isDirty && !row.hasConflicts && !row.isDetached && row.status !== "Error";
+}
+
+function skipReason(row: RepoRow): string {
+  if (row.hasConflicts) return "unresolved merge conflicts";
+  if (row.isDirty) return "uncommitted changes";
+  if (row.isDetached) return "detached HEAD";
+  if (row.status === "Error") return row.error ?? "repository error";
+  return "not eligible";
 }
 
 async function runLimited<T>(
@@ -144,18 +165,72 @@ export function useRepos() {
     setRows((current) => current.filter((row) => !set.has(row.folder)));
   }, []);
 
-  const pullRows = useCallback(async (targetRows: RepoRow[]) => {
-    const allowed = targetRows.filter(
-      (row) => !row.isDirty && !row.hasConflicts && !row.isDetached && row.status !== "Error",
-    );
-    await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
-      updateRow(row.folder, { acting: true, note: "Pulling…" });
-      const result = await invoke<ActionResult>("pull_repository", { folder: row.folder });
-      updateRow(row.folder, { acting: false, note: result.message });
-      await refreshFolders([row.folder]);
-    });
-    return { skipped: targetRows.length - allowed.length };
-  }, [updateRow, refreshFolders]);
+  const bulkAction = useCallback(
+    async (
+      targetRows: RepoRow[],
+      verb: "pull" | "push" | "sync",
+      run: (row: RepoRow) => Promise<void>,
+    ): Promise<BulkActionResult> => {
+      const allowed = targetRows.filter(isEligible);
+      const skipped = targetRows
+        .filter((row) => !isEligible(row))
+        .map((row) => ({ folder: row.folder, repo: row.repo, reason: skipReason(row) }));
+      const succeeded: string[] = [];
+      const failed: { folder: string; repo: string; message: string }[] = [];
+
+      await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
+        updateRow(row.folder, { acting: true, actingVerb: verb });
+        try {
+          await run(row);
+          succeeded.push(row.folder);
+        } catch (error) {
+          failed.push({ folder: row.folder, repo: row.repo, message: String(error) });
+        } finally {
+          updateRow(row.folder, { acting: false, actingVerb: null });
+          await refreshFolders([row.folder]);
+        }
+      });
+
+      return { succeeded, failed, skipped };
+    },
+    [updateRow, refreshFolders],
+  );
+
+  const pullRows = useCallback(
+    (targetRows: RepoRow[]) =>
+      bulkAction(targetRows, "pull", async (row) => {
+        const result = await invoke<ActionResult>("pull_repository", { folder: row.folder });
+        updateRow(row.folder, { note: result.message });
+        if (!result.ok) throw new Error(result.message);
+      }),
+    [bulkAction, updateRow],
+  );
+
+  const pushRows = useCallback(
+    (targetRows: RepoRow[]) =>
+      bulkAction(targetRows, "push", async (row) => {
+        const result = await invoke<ActionResult>("push_repository", { folder: row.folder });
+        updateRow(row.folder, { note: result.message });
+        if (!result.ok) throw new Error(result.message);
+      }),
+    [bulkAction, updateRow],
+  );
+
+  /** Sync = pull (ff-only) then push; a pull failure aborts the push for that repo. */
+  const syncRows = useCallback(
+    (targetRows: RepoRow[]) =>
+      bulkAction(targetRows, "sync", async (row) => {
+        const pullResult = await invoke<ActionResult>("pull_repository", { folder: row.folder });
+        if (!pullResult.ok) {
+          updateRow(row.folder, { note: pullResult.message });
+          throw new Error(pullResult.message);
+        }
+        const pushResult = await invoke<ActionResult>("push_repository", { folder: row.folder });
+        updateRow(row.folder, { note: pushResult.message });
+        if (!pushResult.ok) throw new Error(pushResult.message);
+      }),
+    [bulkAction, updateRow],
+  );
 
   const switchRows = useCallback(async (targetRows: RepoRow[], branch: string, allowDetached = false) => {
     const allowed = targetRows.filter(
@@ -166,12 +241,12 @@ export function useRepos() {
         row.status !== "Error",
     );
     await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
-      updateRow(row.folder, { acting: true, note: `Switching to ${branch}…` });
+      updateRow(row.folder, { acting: true, actingVerb: "switch", note: `Switching to ${branch}…` });
       const result = await invoke<ActionResult>("switch_repository", {
         folder: row.folder,
         branch,
       });
-      updateRow(row.folder, { acting: false, note: result.message });
+      updateRow(row.folder, { acting: false, actingVerb: null, note: result.message });
       await refreshFolders([row.folder]);
     });
     return { skipped: targetRows.length - allowed.length };
@@ -218,6 +293,8 @@ export function useRepos() {
     addRepositories,
     removeFolders,
     pullRows,
+    pushRows,
+    syncRows,
     switchRows,
     openInVSCode,
     revealInFinder,

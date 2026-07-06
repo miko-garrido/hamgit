@@ -20,11 +20,15 @@ export type RepositoryState = {
   error: string | null;
 };
 
+export type ActingVerb = "pull" | "push" | "sync" | "switch" | null;
+
 export type RepoRow = RepositoryState & {
   /** False until the first inspect resolves; the row shows a loading state. */
   loaded: boolean;
   refreshing: boolean;
   acting: boolean;
+  /** Which verb is in flight, so the remote/branch cell can render "Pulling…" etc. */
+  actingVerb: ActingVerb;
   note: string | null;
 };
 
@@ -35,3 +39,10 @@ export type ActionResult = {
 
 export type SortColumn = "folder" | "repo" | "branch";
 export type SortDirection = "asc" | "desc";
+
+/** Shared shape returned by bulk pull/push/sync so callers can build dialogs. */
+export type BulkActionResult = {
+  succeeded: string[];
+  failed: { folder: string; repo: string; message: string }[];
+  skipped: { folder: string; repo: string; reason: string }[];
+};
