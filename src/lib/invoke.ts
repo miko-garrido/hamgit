@@ -106,7 +106,12 @@ let mockFolderCounter = 0;
 const AUTH_ERROR = "fatal: could not read Username for 'https://github.com': terminal prompts disabled";
 
 /** Repos whose pull/push always fail, to exercise error/partial dialogs in the mock. */
-const FAILING_FOLDERS = new Set(["/Users/miko/Projects/dorxata-api"]);
+// hamgit is Clean (action-eligible), so its failure actually reaches the error
+// dialog; dorxata-api is Conflict and only ever exercises the skip path.
+const FAILING_FOLDERS = new Set([
+  "/Users/miko/Projects/dorxata-api",
+  "/Users/miko/Projects/hamgit",
+]);
 
 function aheadBehindOf(remote: RepositoryState["remote"]): { ahead: number; behind: number } {
   if (remote === "upToDate" || remote === "noUpstream" || remote === "unknown") {
