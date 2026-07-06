@@ -15,6 +15,9 @@ type Props = {
   onRowClick: (folder: string, event: React.MouseEvent) => void;
   onContextMenu?: (folder: string, event: React.MouseEvent) => void;
   widths: ColumnWidths;
+  /** Floor for the flex Remote column so it never collapses below its
+   * longest resting value ("Up to date" / "↑ 1, ↓ 4"). */
+  remoteMinWidth: number;
 };
 
 /**
@@ -31,6 +34,7 @@ export function RepoRow({
   onRowClick,
   onContextMenu,
   widths,
+  remoteMinWidth,
 }: Props) {
   const radiusTop = isSelected && !prevSelected;
   const radiusBottom = isSelected && !nextSelected;
@@ -46,7 +50,7 @@ export function RepoRow({
       role="row"
       onClick={(event) => onRowClick(row.folder, event)}
       onContextMenu={(event) => onContextMenu?.(row.folder, event)}
-      className={`group relative flex h-11 items-center text-sm ${
+      className={`group relative z-0 flex h-11 items-center text-sm ${
         isSelected ? "bg-row-selected" : "hover:bg-row-hover hover:rounded-md"
       }`}
       style={isSelected ? { backgroundColor: "var(--row-selected)", borderRadius } : undefined}
@@ -107,7 +111,10 @@ export function RepoRow({
         )}
       </div>
 
-      <div className="flex min-w-0 flex-1 items-center truncate pr-2 text-xs text-slate-500">
+      <div
+        className="flex min-w-0 flex-1 items-center truncate pr-2 text-xs text-slate-500"
+        style={{ minWidth: remoteMinWidth }}
+      >
         {!row.loaded ? (
           ""
         ) : row.acting && (row.actingVerb === "pull" || row.actingVerb === "push" || row.actingVerb === "sync") ? (
