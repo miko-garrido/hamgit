@@ -103,7 +103,7 @@ Dialogs and palette: `0 24px 64px rgba(15,23,42,0.2), 0 4px 12px rgba(15,23,42,0
 - **Hover**: fill `row-hover`, 6px radius. Reveals the row checkbox (otherwise invisible; the 36px slot is always reserved).
 - **Selected**: fill `row-selected`, checked checkbox (slate-900 rounded square, white check). Adjacent selected rows merge: outer corners of the run get 6px radius, inner shared edges are square, no gap. Different states never merge (hover pill stays separate from a touching selection).
 - **Selection mechanics**: click checkbox toggles; ⌘-click row toggles; shift-click extends range. Selecting 1+ rows shows the selection bar.
-- **Cell tooltips** (0.3s): folder → full unredacted path (mono); repo → `owner/repo` parsed from the origin URL; branch → full branch name only when truncated; status → name + meaning; remote → "Ahead 1, behind 4" in words. Remote cell is NOT clickable.
+- **Cell tooltips** (0.3s): folder → full unredacted path (mono); repo → `owner/repo` parsed from the origin URL; branch → full branch name only when truncated; status → name + meaning; remote → "Ahead 1, behind 4" in words. Remote cell is NOT clickable. Tooltips center horizontally on the pointer's x-position (clamped to the viewport, frozen once shown so they don't chase the cursor); keyboard focus (no pointer) falls back to anchor-centered.
 - **In-flight**: any pull/push/sync replaces the remote cell with spinner + "Pulling…" / "Pushing…" / "Syncing…". Branch switch replaces the branch cell with spinner + "Switching to <branch>…". Resolves on the post-action refresh; errors surface via the error dialog and the status icon.
 
 ## Context menu (right-click on a row)
@@ -137,7 +137,9 @@ No branch switching in the bar. During a bulk action the running icon spins and 
 Hover: slate-100 fill, icon darkens to slate-900. Pressed: slate-200. Disabled: 40% opacity, no hover.
 Processing: icon swaps to spinner (see Motion), button non-interactive. Destructive hover: red-50 fill.
 Tooltips: 0.3s delay, slate-800 pill, 12px white label, 4px gap; below by default, ABOVE for the selection bar.
-No re-delay when moving between adjacent buttons.
+No re-delay when moving between adjacent buttons. Tooltips center on the pointer x-position, clamped
+to the viewport (small anchors like these 32px buttons make this nearly indistinguishable from
+anchor-centered); keyboard focus has no pointer and falls back to anchor-centered.
 
 ## Branch palette (`design/branch-palette.png`, `design/branch-switch-states.png`)
 
