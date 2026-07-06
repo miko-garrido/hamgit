@@ -88,7 +88,7 @@ export function RepoTable({
             <div
               key={header.key}
               className={`relative shrink-0 ${header.width ? "" : "min-w-0 flex-1"}`}
-              style={header.width ? { width: header.width + 12 } : undefined}
+              style={header.width ? { width: header.width } : undefined}
             >
               <button
                 type="button"
