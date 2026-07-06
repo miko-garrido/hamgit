@@ -7,6 +7,55 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+
+  /* Colors */
+  --background: hsl(0 0% 98%);
+  --surface: #FFFFFF;
+  --foreground: hsl(220 18% 13%);
+  --border: hsl(214 18% 88%);
+
+  --slate-50: #F8FAFC;
+  --slate-100: #F1F5F9;
+  --slate-200: #E2E8F0;
+  --slate-400: #94A3B8;
+  --slate-500: #64748B;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1E293B;
+  --slate-900: #0F172A;
+
+  --row-hover: #F1F3F6;
+  --row-selected: #E5EAF2;
+
+  --status-clean: #79AC8F;
+  --status-dirty: #D9A863;
+  --status-alert: #C67F7F;
+  --status-detached: #98A4B5;
+
+  --emerald-50: #F0F6F2;
+  --emerald-200: #D3E5DA;
+  --emerald-800: #4E7A63;
+
+  --amber-50: #FAF6ED;
+  --amber-200: #EEDFC0;
+  --amber-900: #8A6F42;
+
+  --red-50: #F9F1F1;
+  --red-200: #EBD5D5;
+  --red-700: #9C5F5F;
+  --red-800: #8F5454;
+
+  /* Radii */
+  --radius-xs: 5px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-full: 999px;
+
+  /* Shadows */
+  --shadow-floating: 0 8px 24px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --shadow-dialog: 0 24px 64px rgba(15, 23, 42, 0.2), 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 body {
@@ -16,22 +65,4 @@ body {
 button,
 input {
   font: inherit;
-}
-
-@layer components {
-  .button {
-    @apply inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-white px-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50;
-  }
-
-  .button-primary {
-    @apply inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-900 bg-slate-900 px-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-50;
-  }
-
-  .button-danger {
-    @apply inline-flex h-8 items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50;
-  }
-
-  .icon-button {
-    @apply inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-slate-600 hover:border-border hover:bg-white hover:text-slate-900;
-  }
 }
