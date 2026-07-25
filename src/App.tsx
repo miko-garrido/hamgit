@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRepos } from "./hooks/useRepos";
 import { useSelection } from "./hooks/useSelection";
 import { useDialogs } from "./hooks/useDialogs";
+import { useAppUpdater } from "./hooks/useAppUpdater";
 import { TitleBar } from "./components/TitleBar";
 import { RepoTable } from "./components/RepoTable";
 import { EmptyState } from "./components/EmptyState";
@@ -37,6 +38,7 @@ export function App() {
   } = useRepos();
   const { selected, isSelected, toggle, clear, handleRowClick, setSelected } = useSelection();
   const { dialog, show, dismiss } = useDialogs();
+  useAppUpdater(show, dismiss);
 
   const [menu, setMenu] = useState<MenuState>(null);
   const [palette, setPalette] = useState<PaletteState>(null);

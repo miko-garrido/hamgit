@@ -1,6 +1,6 @@
 {
   "name": "hamgit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "packageManager": "bun@latest",
   "type": "module",
@@ -12,6 +12,8 @@
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-process": "~2",
+    "@tauri-apps/plugin-updater": "~2",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

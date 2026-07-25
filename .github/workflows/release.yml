@@ -1,0 +1,70 @@
+# Builds signed macOS updater artifacts and publishes a GitHub Release.
+# Trigger: push a version tag (v0.2.0) after bumping package/tauri/Cargo versions,
+# or run manually via workflow_dispatch.
+#
+# Required secret:
+#   TAURI_SIGNING_PRIVATE_KEY — contents of ~/.tauri/hamgit.key
+#
+# Optional (empty password key):
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#
+# Optional but required for Gatekeeper-friendly macOS distribution:
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#   APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  publish-macos:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - args: "--target aarch64-apple-darwin"
+          - args: "--target x86_64-apple-darwin"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "Hamgit v__VERSION__"
+          releaseBody: "macOS build with auto-update support. See assets to download."
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
