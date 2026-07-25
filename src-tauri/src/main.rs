@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-const FETCH_TIMEOUT: Duration = Duration::from_secs(12);
+const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 const NETWORK_GIT_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Serialize)]
@@ -56,16 +56,44 @@ struct BranchInfo {
     last_commit_unix: i64,
 }
 
+fn resolve_ssh_command() -> String {
+    const BATCH: &str = "-oBatchMode=yes";
+
+    if let Ok(existing) = std::env::var("GIT_SSH_COMMAND") {
+        if existing.contains("BatchMode") {
+            return existing;
+        }
+        return format!("{existing} {BATCH}");
+    }
+
+    // Don't recurse through apply_noninteractive_git_env — bare config read.
+    if let Ok(output) = Command::new("git")
+        .args(["config", "--global", "--get", "core.sshCommand"])
+        .stdin(Stdio::null())
+        .output()
+    {
+        if output.status.success() {
+            let configured = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !configured.is_empty() {
+                if configured.contains("BatchMode") {
+                    return configured;
+                }
+                return format!("{configured} {BATCH}");
+            }
+        }
+    }
+
+    format!("ssh {BATCH}")
+}
+
 fn apply_noninteractive_git_env(cmd: &mut Command) {
     // Never block on credential / SSH prompts — fail fast instead.
+    // Preserve any user GIT_SSH_COMMAND / core.sshCommand; only add BatchMode.
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS_REQUIRE", "never")
-        .env(
-            "GIT_SSH_COMMAND",
-            "ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new",
-        )
+        .env("GIT_SSH_COMMAND", resolve_ssh_command())
         .stdin(Stdio::null());
 }
 
@@ -94,7 +122,15 @@ fn kill_git_tree(child: &mut std::process::Child) {
         unsafe {
             let _ = libc::kill(-pid, libc::SIGTERM);
         }
-        std::thread::sleep(Duration::from_millis(200));
+        let grace = Instant::now() + Duration::from_secs(3);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) if Instant::now() >= grace => break,
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                Err(_) => break,
+            }
+        }
         unsafe {
             let _ = libc::kill(-pid, libc::SIGKILL);
         }
@@ -331,12 +367,9 @@ fn inspect(repo: &str) -> RepositoryState {
     }
 }
 
-const SWITCH_TIMEOUT: Duration = Duration::from_secs(60);
-const MERGE_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Best-effort remote ref refresh. Failures (offline, auth, timeout) are
-/// ignored so callers can still inspect local state.
-fn fetch_remote(repo: &str) {
+/// Best-effort remote ref refresh. Returns false on timeout / spawn failure so
+/// callers can avoid presenting stale ahead/behind as current.
+fn fetch_remote(repo: &str) -> bool {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(repo)
@@ -347,19 +380,19 @@ fn fetch_remote(repo: &str) {
     put_in_own_process_group(&mut cmd);
 
     let Ok(mut child) = cmd.spawn() else {
-        return;
+        return false;
     };
 
     let deadline = Instant::now() + FETCH_TIMEOUT;
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => return,
+            Ok(Some(status)) => return status.success(),
             Ok(None) if Instant::now() >= deadline => {
                 kill_git_tree(&mut child);
-                return;
+                return false;
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-            Err(_) => return,
+            Err(_) => return false,
         }
     }
 }
@@ -399,7 +432,7 @@ fn parse_branch_lines(output: &str, strip_prefix: Option<&str>) -> Vec<BranchInf
             None => raw_name.to_string(),
         };
 
-        if name.is_empty() || name == "HEAD" {
+        if name.is_empty() || name == "HEAD" || name == "origin" {
             continue;
         }
         if !seen.insert(name.clone()) {
@@ -487,14 +520,15 @@ fn search_remote_branches_sync(folder: &str, query: &str) -> Result<Vec<BranchIn
 }
 
 fn pull_repository_sync(folder: &str) -> ActionResult {
-    // Network phase only under hard timeout — never SIGKILL mid-merge (index.lock).
+    // Hard-timeout only the network fetch. Local merge must not be SIGKILL'd
+    // mid-checkout (leaves index.lock / half-swapped trees).
     if let Err(error) = run_git_timeout(folder, &["fetch", "--prune"], NETWORK_GIT_TIMEOUT) {
         return ActionResult {
             ok: false,
             message: error,
         };
     }
-    match run_git_timeout(folder, &["merge", "--ff-only", "@{upstream}"], MERGE_TIMEOUT) {
+    match run_git(folder, &["merge", "--ff-only", "@{upstream}"]) {
         Ok(output) => ActionResult {
             ok: true,
             message: if output.is_empty() {
@@ -528,8 +562,9 @@ fn push_repository_sync(folder: &str) -> ActionResult {
 }
 
 fn switch_repository_sync(folder: &str, branch: &str) -> ActionResult {
-    // `--` so branch names can't be parsed as options; timeout covers LFS hangs.
-    match run_git_timeout(folder, &["switch", "--", branch], SWITCH_TIMEOUT) {
+    // Local checkout — no hard kill (same index.lock / half-tree risk as merge).
+    // `--` so branch names can't be parsed as options.
+    match run_git(folder, &["switch", "--", branch]) {
         Ok(output) => ActionResult {
             ok: true,
             message: if output.is_empty() {
@@ -577,8 +612,13 @@ async fn inspect_repository(folder: String) -> RepositoryState {
 async fn refresh_repository(folder: String) -> RepositoryState {
     let folder_for_err = folder.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        fetch_remote(&folder);
-        inspect(&folder)
+        let fetched = fetch_remote(&folder);
+        let mut state = inspect(&folder);
+        if !fetched {
+            // Don't present stale ahead/behind as if the fetch succeeded.
+            state.remote = RemoteLabel::Unknown;
+        }
+        state
     })
     .await
     .unwrap_or_else(|error| {
@@ -685,8 +725,9 @@ mod tests {
 
     #[test]
     fn parse_branch_lines_strips_origin_and_skips_head() {
+        // Real git emits %(refname:short) "origin" for refs/remotes/origin/HEAD.
         let output = format!(
-            "origin/HEAD{nul}{nul}\norigin/feature{nul}3d ago{nul}1\n",
+            "origin{nul}7 minutes ago{nul}1\norigin/feature{nul}3d ago{nul}1\n",
             nul = '\0'
         );
         let branches = parse_branch_lines(&output, Some("origin/"));

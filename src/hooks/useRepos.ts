@@ -89,7 +89,9 @@ export function useRepos() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const refreshInFlight = useRef(false);
   const rowsRef = useRef(rows);
-  rowsRef.current = rows;
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   const folders = useMemo(() => rows.map((row) => row.folder), [rows]);
   const foldersKey = useMemo(() => JSON.stringify(folders), [folders]);
@@ -224,11 +226,16 @@ export function useRepos() {
       const succeeded: string[] = [];
       const failed: { folder: string; repo: string; message: string }[] = [];
 
-      // Yield once so subsequent acting labels can flush before git work.
+      // Guard all selected rows immediately (acting:true, no verb yet) so a
+      // second pull/push/switch can't start on a queued repo. Verb/label is
+      // set when the worker actually begins that row.
+      for (const row of allowed) {
+        updateRow(row.folder, { acting: true, actingVerb: null });
+      }
       await afterPaint();
 
       await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
-        updateRow(row.folder, { acting: true, actingVerb: verb });
+        updateRow(row.folder, { actingVerb: verb });
         await afterPaint();
         // Keep acting true through the post-action inspect so the remote cell
         // shows "Pulling…" / "Pushing…" / "Syncing…" until refresh lands

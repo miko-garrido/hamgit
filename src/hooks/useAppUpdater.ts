@@ -19,11 +19,13 @@ const UPDATER_DELAY_MS = 2500;
  * so the network check does not compete with the initial repo load.
  */
 export function useAppUpdater(show: Show, dismiss: Dismiss) {
-  const started = useRef(false);
+  // Mount-scoped: never cleared in cleanup, so unstable show/dismiss identities
+  // can't reschedule forever and cancel the check.
+  const scheduled = useRef(false);
 
   useEffect(() => {
-    if (started.current || import.meta.env.DEV || !isTauri()) return;
-    started.current = true;
+    if (scheduled.current || import.meta.env.DEV || !isTauri()) return;
+    scheduled.current = true;
 
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -74,10 +76,6 @@ export function useAppUpdater(show: Show, dismiss: Dismiss) {
       })();
     }, UPDATER_DELAY_MS);
 
-    return () => {
-      window.clearTimeout(timer);
-      // Allow a remount (e.g. dep identity change) to schedule again.
-      started.current = false;
-    };
+    return () => window.clearTimeout(timer);
   }, [show, dismiss]);
 }

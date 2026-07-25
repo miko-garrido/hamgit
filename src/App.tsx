@@ -290,8 +290,11 @@ export function App() {
     if (action === "refresh") {
       setRunningBarAction("refresh");
       await afterPaint();
-      await refreshFolders(folders);
-      setRunningBarAction(null);
+      try {
+        await refreshFolders(folders);
+      } finally {
+        setRunningBarAction(null);
+      }
       return;
     }
 
