@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { afterPaint } from "../lib/afterPaint";
 import { invoke, pickDirectories } from "../lib/invoke";
 import { folderName } from "../lib/format";
 import type {
@@ -73,6 +74,13 @@ async function runLimited<T>(
   await Promise.all(workers);
 }
 
+type LoadOptions = {
+  /** When false, skip marking rows refreshing / afterPaint (continuation pass). */
+  paint?: boolean;
+  /** When false, leave refreshing true after each row finishes (multi-pass load). */
+  clearRefreshing?: boolean;
+};
+
 export function useRepos() {
   // Lazy init: rows must be seeded from storage before the persist effect can
   // ever run, otherwise a mount with empty state wipes the saved repo list.
@@ -80,6 +88,10 @@ export function useRepos() {
   const [sortColumn, setSortColumn] = useState<SortColumn>("repo");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const refreshInFlight = useRef(false);
+  const rowsRef = useRef(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   const folders = useMemo(() => rows.map((row) => row.folder), [rows]);
   const foldersKey = useMemo(() => JSON.stringify(folders), [folders]);
@@ -94,9 +106,18 @@ export function useRepos() {
   }, []);
 
   const loadFoldersState = useCallback(
-    async (folders: string[], command: "refresh_repository" | "inspect_repository") => {
+    async (
+      folders: string[],
+      command: "refresh_repository" | "inspect_repository",
+      options: LoadOptions = {},
+    ) => {
       if (folders.length === 0) return;
-      folders.forEach((folder) => updateRow(folder, { refreshing: true }));
+      const { paint = true, clearRefreshing = true } = options;
+
+      if (paint) {
+        folders.forEach((folder) => updateRow(folder, { refreshing: true }));
+        await afterPaint();
+      }
 
       await runLimited(folders, REFRESH_CONCURRENCY, async (folder) => {
         try {
@@ -108,7 +129,7 @@ export function useRepos() {
                     ...row,
                     ...state,
                     loaded: true,
-                    refreshing: false,
+                    refreshing: clearRefreshing ? false : true,
                     // Keep the in-flight label (e.g. "Switching to…") while acting;
                     // otherwise surface the inspect error as a row note.
                     note: row.acting ? row.note : state.error,
@@ -119,7 +140,7 @@ export function useRepos() {
         } catch (error) {
           updateRow(folder, {
             loaded: true,
-            refreshing: false,
+            refreshing: clearRefreshing ? false : true,
             status: "Error",
             remote: "unknown",
             error: String(error),
@@ -143,28 +164,32 @@ export function useRepos() {
     [loadFoldersState],
   );
 
-  // Initial load: refresh once the repo list first populates.
+  // Initial load: local inspect then background fetch, one continuous spinner.
   const initialRefreshDone = useRef(false);
   useEffect(() => {
     if (rows.length > 0 && !initialRefreshDone.current) {
       initialRefreshDone.current = true;
-      void refreshFolders(rows.map((row) => row.folder));
+      const folders = rows.map((row) => row.folder);
+      void (async () => {
+        await loadFoldersState(folders, "inspect_repository", { clearRefreshing: false });
+        await loadFoldersState(folders, "refresh_repository", {
+          paint: false,
+          clearRefreshing: true,
+        });
+      })();
     }
-  }, [rows, refreshFolders]);
+  }, [rows, loadFoldersState]);
 
   // Hardcoded 30s auto-refresh; skips rows with actions in flight.
+  // Side effects stay outside setState updaters (StrictMode-safe).
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (refreshInFlight.current) return;
-      setRows((current) => {
-        const eligible = current.filter((row) => !row.acting && !row.refreshing);
-        if (eligible.length > 0) {
-          refreshInFlight.current = true;
-          void refreshFolders(eligible.map((row) => row.folder)).finally(() => {
-            refreshInFlight.current = false;
-          });
-        }
-        return current;
+      const eligible = rowsRef.current.filter((row) => !row.acting && !row.refreshing);
+      if (eligible.length === 0) return;
+      refreshInFlight.current = true;
+      void refreshFolders(eligible.map((row) => row.folder)).finally(() => {
+        refreshInFlight.current = false;
       });
     }, AUTO_REFRESH_MS);
     return () => window.clearInterval(timer);
@@ -201,11 +226,20 @@ export function useRepos() {
       const succeeded: string[] = [];
       const failed: { folder: string; repo: string; message: string }[] = [];
 
+      // Guard all selected rows immediately (acting:true, no verb yet) so a
+      // second pull/push/switch can't start on a queued repo. Verb/label is
+      // set when the worker actually begins that row.
+      for (const row of allowed) {
+        updateRow(row.folder, { acting: true, actingVerb: null });
+      }
+      await afterPaint();
+
       await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
+        updateRow(row.folder, { actingVerb: verb });
+        await afterPaint();
         // Keep acting true through the post-action inspect so the remote cell
         // shows "Pulling…" / "Pushing…" / "Syncing…" until refresh lands
         // (DESIGN.md + Paper "Remote updating").
-        updateRow(row.folder, { acting: true, actingVerb: verb });
         try {
           await run(row);
           succeeded.push(row.folder);
@@ -268,6 +302,7 @@ export function useRepos() {
       // Branch cell stays on "Switching to…" until the post-action refresh
       // lands (Paper "Branch selected — row shows switching state").
       updateRow(folder, { acting: true, actingVerb: "switch", note: `Switching to ${branch}…` });
+      await afterPaint();
       try {
         const result = await invoke<ActionResult>("switch_repository", { folder, branch });
         await inspectFolders([folder]);
