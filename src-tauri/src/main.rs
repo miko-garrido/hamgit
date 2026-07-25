@@ -77,7 +77,10 @@ fn repo_name(folder: &str) -> String {
 }
 
 fn parse_remote(repo: &str) -> RemoteLabel {
-    match run_git(repo, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]) {
+    match run_git(
+        repo,
+        &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+    ) {
         Ok(output) => {
             let mut parts = output.split_whitespace();
             let ahead = parts.next().and_then(|value| value.parse::<u32>().ok());
@@ -215,7 +218,12 @@ fn parse_branch_lines(output: &str, strip_prefix: Option<&str>) -> Vec<BranchInf
         let mut parts = line.splitn(3, '|');
         let raw_name = parts.next().unwrap_or("").trim();
         let relative = parts.next().unwrap_or("").trim().to_string();
-        let unix = parts.next().unwrap_or("0").trim().parse::<i64>().unwrap_or(0);
+        let unix = parts
+            .next()
+            .unwrap_or("0")
+            .trim()
+            .parse::<i64>()
+            .unwrap_or(0);
 
         let name = match strip_prefix {
             Some(prefix) => raw_name
@@ -388,6 +396,8 @@ fn reveal_in_finder(folder: String) -> ActionResult {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             inspect_repository,
