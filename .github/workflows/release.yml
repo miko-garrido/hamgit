@@ -1,26 +1,43 @@
-# Builds signed macOS updater artifacts and publishes a GitHub Release.
-# Trigger: push a version tag (v0.2.0) after bumping package/tauri/Cargo versions,
-# or run manually via workflow_dispatch.
+# release-please opens/updates a Release PR on pushes to main.
+# Merging that PR tags vX.Y.Z and creates a GitHub Release; this workflow's
+# publish job then builds macOS updater artifacts onto that release.
+# workflow_dispatch rebuilds from the current branch without a version bump.
 #
-# Required secret:
-#   TAURI_SIGNING_PRIVATE_KEY — contents of ~/.tauri/hamgit.key
-#
-# Optional (empty password key):
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-#
-# Optional but required for Gatekeeper-friendly macOS distribution:
-#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
-#   APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
+# Required secret: TAURI_SIGNING_PRIVATE_KEY
+# Optional: TAURI_SIGNING_PRIVATE_KEY_PASSWORD, APPLE_* signing/notarization secrets
 name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 jobs:
+  release-please:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+
   publish-macos:
+    needs: release-please
+    if: >
+      always() &&
+      !failure() &&
+      !cancelled() &&
+      (
+        needs.release-please.outputs.release_created == 'true' ||
+        github.event_name == 'workflow_dispatch'
+      )
     permissions:
       contents: write
     strategy:
@@ -32,6 +49,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name || github.ref }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -62,8 +81,8 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: v__VERSION__
-          releaseName: "Hamgit v__VERSION__"
+          tagName: ${{ needs.release-please.outputs.tag_name || 'v__VERSION__' }}
+          releaseName: "Hamgit ${{ needs.release-please.outputs.tag_name || 'v__VERSION__' }}"
           releaseBody: "macOS build with auto-update support. See assets to download."
           releaseDraft: false
           prerelease: false
