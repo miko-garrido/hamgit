@@ -21,8 +21,10 @@ export function AsciiRipple({ active, origin }: Props) {
   const originRef = useRef(origin);
   const fadeRef = useRef(0);
   const startRef = useRef(0);
+  const wasActiveRef = useRef(false);
   const rafRef = useRef(0);
   const reducedRef = useRef(false);
+  const kickRef = useRef<(() => void) | null>(null);
 
   activeRef.current = active;
   originRef.current = origin;
@@ -65,15 +67,23 @@ export function AsciiRipple({ active, origin }: Props) {
     resize();
 
     function draw(now: number) {
-      if (!startRef.current) startRef.current = now;
-      const target = activeRef.current ? 1 : 0;
+      const isActive = activeRef.current;
+      // Rising edge resets the expand clock inside the same frame that draws,
+      // so the welcome splash always starts from the button — no effect race.
+      if (isActive && !wasActiveRef.current) {
+        startRef.current = now;
+      }
+      wasActiveRef.current = isActive;
+
+      const target = isActive ? 1 : 0;
       // Ease opacity toward target so leave fades out instead of cutting.
       const fadeSpeed = target > fadeRef.current ? 0.08 : 0.045;
       fadeRef.current += (target - fadeRef.current) * fadeSpeed;
-      if (fadeRef.current < 0.01 && !activeRef.current) {
+
+      if (fadeRef.current < 0.01 && !isActive) {
         fadeRef.current = 0;
         ctx!.clearRect(0, 0, cssW, cssH);
-        rafRef.current = requestAnimationFrame(draw);
+        rafRef.current = 0;
         return;
       }
 
@@ -145,18 +155,23 @@ export function AsciiRipple({ active, origin }: Props) {
       rafRef.current = requestAnimationFrame(draw);
     }
 
-    rafRef.current = requestAnimationFrame(draw);
+    kickRef.current = () => {
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(draw);
+    };
 
     return () => {
       cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+      kickRef.current = null;
       ro.disconnect();
       media.removeEventListener("change", onMotion);
     };
   }, []);
 
-  // Reset the expand clock each time hover begins so rings restart from the button.
+  // Start (or resume) the loop only when the ripple becomes active.
   useEffect(() => {
-    if (active) startRef.current = 0;
+    if (active) kickRef.current?.();
   }, [active]);
 
   return (

@@ -10,8 +10,11 @@ type Props = {
 export function EmptyState({ onAdd }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const [rippling, setRippling] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+
+  const rippling = hovered || focused;
 
   const updateOrigin = useCallback(() => {
     const container = containerRef.current;
@@ -24,15 +27,6 @@ export function EmptyState({ onAdd }: Props) {
       y: b.top + b.height / 2 - c.top,
     });
   }, []);
-
-  function onEnter() {
-    updateOrigin();
-    setRippling(true);
-  }
-
-  function onLeave() {
-    setRippling(false);
-  }
 
   return (
     <div
@@ -54,10 +48,16 @@ export function EmptyState({ onAdd }: Props) {
         ref={buttonRef}
         type="button"
         onClick={onAdd}
-        onMouseEnter={onEnter}
-        onMouseLeave={onLeave}
-        onFocus={onEnter}
-        onBlur={onLeave}
+        onMouseEnter={() => {
+          updateOrigin();
+          setHovered(true);
+        }}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => {
+          updateOrigin();
+          setFocused(true);
+        }}
+        onBlur={() => setFocused(false)}
         className="relative z-10 inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800"
       >
         <FolderPlus className="h-4 w-4" />
