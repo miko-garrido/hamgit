@@ -1,7 +1,9 @@
 use serde::Serialize;
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -56,7 +58,12 @@ struct BranchInfo {
     last_commit_unix: i64,
 }
 
-fn resolve_ssh_command() -> String {
+fn ssh_command_cache() -> &'static Mutex<HashMap<String, String>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn resolve_ssh_command(repo: &str) -> String {
     const BATCH: &str = "-oBatchMode=yes";
 
     if let Ok(existing) = std::env::var("GIT_SSH_COMMAND") {
@@ -66,9 +73,16 @@ fn resolve_ssh_command() -> String {
         return format!("{existing} {BATCH}");
     }
 
-    // Don't recurse through apply_noninteractive_git_env — bare config read.
-    if let Ok(output) = Command::new("git")
-        .args(["config", "--global", "--get", "core.sshCommand"])
+    if let Ok(cache) = ssh_command_cache().lock() {
+        if let Some(cached) = cache.get(repo) {
+            return cached.clone();
+        }
+    }
+
+    // -C <repo> so local / worktree / includeIf-gitdir scopes all resolve.
+    // Do not go through apply_noninteractive_git_env (would recurse).
+    let resolved = if let Ok(output) = Command::new("git")
+        .args(["-C", repo, "config", "--get", "core.sshCommand"])
         .stdin(Stdio::null())
         .output()
     {
@@ -76,24 +90,34 @@ fn resolve_ssh_command() -> String {
             let configured = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !configured.is_empty() {
                 if configured.contains("BatchMode") {
-                    return configured;
+                    configured
+                } else {
+                    format!("{configured} {BATCH}")
                 }
-                return format!("{configured} {BATCH}");
+            } else {
+                format!("ssh {BATCH}")
             }
+        } else {
+            format!("ssh {BATCH}")
         }
-    }
+    } else {
+        format!("ssh {BATCH}")
+    };
 
-    format!("ssh {BATCH}")
+    if let Ok(mut cache) = ssh_command_cache().lock() {
+        cache.insert(repo.to_string(), resolved.clone());
+    }
+    resolved
 }
 
-fn apply_noninteractive_git_env(cmd: &mut Command) {
+fn apply_noninteractive_git_env(cmd: &mut Command, repo: &str) {
     // Never block on credential / SSH prompts — fail fast instead.
     // Preserve any user GIT_SSH_COMMAND / core.sshCommand; only add BatchMode.
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS_REQUIRE", "never")
-        .env("GIT_SSH_COMMAND", resolve_ssh_command())
+        .env("GIT_SSH_COMMAND", resolve_ssh_command(repo))
         .stdin(Stdio::null());
 }
 
@@ -160,7 +184,7 @@ fn join_reader_bounded(
 fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo).args(args);
-    apply_noninteractive_git_env(&mut cmd);
+    apply_noninteractive_git_env(&mut cmd, repo);
 
     let output = cmd
         .output()
@@ -183,7 +207,7 @@ fn run_git_timeout(repo: &str, args: &[&str], timeout: Duration) -> Result<Strin
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    apply_noninteractive_git_env(&mut cmd);
+    apply_noninteractive_git_env(&mut cmd, repo);
     put_in_own_process_group(&mut cmd);
 
     let mut child = cmd
@@ -376,7 +400,7 @@ fn fetch_remote(repo: &str) -> bool {
         .args(["fetch", "--prune", "--quiet"])
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    apply_noninteractive_git_env(&mut cmd);
+    apply_noninteractive_git_env(&mut cmd, repo);
     put_in_own_process_group(&mut cmd);
 
     let Ok(mut child) = cmd.spawn() else {
