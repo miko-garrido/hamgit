@@ -189,6 +189,9 @@ in localStorage alongside the repo list.
 
 - Repo list and column widths persist in localStorage (existing keys: `hamgit.repositories`).
 - Auto-refresh: hardcoded 30s interval, skips repos with actions in flight.
+  Refresh (manual + 30s) best-effort fetches remote refs (`git fetch --prune`)
+  before re-inspecting so ahead/behind stay current; fetch failures stay silent
+  (offline/auth still show local state). Post-action refreshes inspect only.
 - Refresh concurrency 6; action concurrency 3 (as in the current code).
 - Bulk pull/sync eligibility: skip dirty/conflict/detached/error repos, report partial success.
 - Sync = pull (ff-only) then push; a pull failure aborts the push and reports the error.

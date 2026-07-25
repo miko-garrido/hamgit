@@ -181,6 +181,22 @@ fn inspect_repository(folder: String) -> RepositoryState {
     inspect(&folder)
 }
 
+/// Best-effort remote ref refresh. Failures (offline, auth) are ignored so
+/// callers can still inspect local state.
+fn fetch_remote(repo: &str) {
+    let _ = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["fetch", "--prune", "--quiet"])
+        .output();
+}
+
+#[tauri::command]
+fn refresh_repository(folder: String) -> RepositoryState {
+    fetch_remote(&folder);
+    inspect(&folder)
+}
+
 const BRANCH_FORMAT: &str = "%(refname:short)|%(committerdate:relative)|%(committerdate:unix)";
 const RECENT_BRANCH_CAP: usize = 20;
 
@@ -262,11 +278,7 @@ fn list_recent_branches(folder: String) -> Result<Vec<BranchInfo>, String> {
 fn search_remote_branches(folder: String, query: String) -> Result<Vec<BranchInfo>, String> {
     // Best-effort refresh of the remote ref cache; offline should still be
     // able to search whatever refs are already known locally.
-    let _ = Command::new("git")
-        .arg("-C")
-        .arg(&folder)
-        .args(["fetch", "origin", "--prune", "--quiet"])
-        .output();
+    fetch_remote(&folder);
 
     let remote_output = run_git(
         &folder,
@@ -379,6 +391,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             inspect_repository,
+            refresh_repository,
             list_recent_branches,
             search_remote_branches,
             pull_repository,

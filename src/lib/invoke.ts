@@ -153,7 +153,8 @@ async function mockInvoke<T>(command: string, args?: Record<string, unknown>): P
   await delay();
 
   switch (command) {
-    case "inspect_repository": {
+    case "inspect_repository":
+    case "refresh_repository": {
       const folder = String(args?.folder ?? "");
       const seed = MOCK_REPOS[folder];
       if (seed) return { ...seed } as unknown as T;
