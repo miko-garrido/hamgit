@@ -57,10 +57,68 @@ struct BranchInfo {
 }
 
 fn apply_noninteractive_git_env(cmd: &mut Command) {
-    // Credential helpers / prompts must never block the UI forever.
+    // Never block on credential / SSH prompts — fail fast instead.
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
+        .env("GIT_ASKPASS", "")
+        .env("SSH_ASKPASS_REQUIRE", "never")
+        .env(
+            "GIT_SSH_COMMAND",
+            "ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new",
+        )
         .stdin(Stdio::null());
+}
+
+#[cfg(unix)]
+fn put_in_own_process_group(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // So timeout can kill git AND helpers (ssh, git-remote-https, …).
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setpgid(0, 0) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn put_in_own_process_group(_cmd: &mut Command) {}
+
+fn kill_git_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        // Negative pid → process group (set via setpgid in put_in_own_process_group).
+        unsafe {
+            let _ = libc::kill(-pid, libc::SIGTERM);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        unsafe {
+            let _ = libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Join a reader thread without blocking forever if a grandchild still holds the pipe.
+fn join_reader_bounded(
+    handle: std::thread::JoinHandle<Vec<u8>>,
+    deadline: Instant,
+) -> Vec<u8> {
+    loop {
+        if handle.is_finished() {
+            return handle.join().unwrap_or_default();
+        }
+        if Instant::now() >= deadline {
+            // Dropping JoinHandle detaches; prefer an empty buffer over hanging.
+            drop(handle);
+            return Vec::new();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
@@ -81,8 +139,7 @@ fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// Runs git with a hard timeout. Used for network ops (pull/push) so auth or
-/// hung remotes cannot freeze a worker indefinitely.
+/// Runs git with a hard timeout. Used for network / potentially-hanging ops.
 fn run_git_timeout(repo: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
@@ -91,6 +148,7 @@ fn run_git_timeout(repo: &str, args: &[&str], timeout: Duration) -> Result<Strin
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     apply_noninteractive_git_env(&mut cmd);
+    put_in_own_process_group(&mut cmd);
 
     let mut child = cmd
         .spawn()
@@ -121,22 +179,23 @@ fn run_git_timeout(repo: &str, args: &[&str], timeout: Duration) -> Result<Strin
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "git timed out after {}s",
-                    timeout.as_secs()
-                ));
+                kill_git_tree(&mut child);
+                // Bound pipe joins so orphaned helpers can't freeze the worker.
+                let join_deadline = Instant::now() + Duration::from_millis(500);
+                let _ = join_reader_bounded(stdout_handle, join_deadline);
+                let _ = join_reader_bounded(stderr_handle, join_deadline);
+                return Err(format!("git timed out after {}s", timeout.as_secs()));
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(error) => return Err(format!("failed to wait for git: {error}")),
         }
     };
 
-    let stdout = String::from_utf8_lossy(&stdout_handle.join().unwrap_or_default())
+    let join_deadline = Instant::now() + Duration::from_secs(2);
+    let stdout = String::from_utf8_lossy(&join_reader_bounded(stdout_handle, join_deadline))
         .trim()
         .to_string();
-    let stderr = String::from_utf8_lossy(&stderr_handle.join().unwrap_or_default())
+    let stderr = String::from_utf8_lossy(&join_reader_bounded(stderr_handle, join_deadline))
         .trim()
         .to_string();
 
@@ -272,6 +331,9 @@ fn inspect(repo: &str) -> RepositoryState {
     }
 }
 
+const SWITCH_TIMEOUT: Duration = Duration::from_secs(60);
+const MERGE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Best-effort remote ref refresh. Failures (offline, auth, timeout) are
 /// ignored so callers can still inspect local state.
 fn fetch_remote(repo: &str) {
@@ -282,6 +344,7 @@ fn fetch_remote(repo: &str) {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     apply_noninteractive_git_env(&mut cmd);
+    put_in_own_process_group(&mut cmd);
 
     let Ok(mut child) = cmd.spawn() else {
         return;
@@ -292,8 +355,7 @@ fn fetch_remote(repo: &str) {
         match child.try_wait() {
             Ok(Some(_)) => return,
             Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
+                kill_git_tree(&mut child);
                 return;
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
@@ -302,7 +364,9 @@ fn fetch_remote(repo: &str) {
     }
 }
 
-const BRANCH_FORMAT: &str = "%(refname:short)|%(committerdate:relative)|%(committerdate:unix)";
+/// NUL-delimited so branch names containing `|` parse correctly.
+const BRANCH_FORMAT: &str =
+    "%(refname:short)%00%(committerdate:relative)%00%(committerdate:unix)";
 const RECENT_BRANCH_CAP: usize = 20;
 
 /// Parses `for-each-ref` output using BRANCH_FORMAT into BranchInfo, stripping
@@ -317,7 +381,7 @@ fn parse_branch_lines(output: &str, strip_prefix: Option<&str>) -> Vec<BranchInf
         if line.is_empty() {
             continue;
         }
-        let mut parts = line.splitn(3, '|');
+        let mut parts = line.splitn(3, '\0');
         let raw_name = parts.next().unwrap_or("").trim();
         let relative = parts.next().unwrap_or("").trim().to_string();
         let unix = parts
@@ -423,7 +487,14 @@ fn search_remote_branches_sync(folder: &str, query: &str) -> Result<Vec<BranchIn
 }
 
 fn pull_repository_sync(folder: &str) -> ActionResult {
-    match run_git_timeout(folder, &["pull", "--ff-only"], NETWORK_GIT_TIMEOUT) {
+    // Network phase only under hard timeout — never SIGKILL mid-merge (index.lock).
+    if let Err(error) = run_git_timeout(folder, &["fetch", "--prune"], NETWORK_GIT_TIMEOUT) {
+        return ActionResult {
+            ok: false,
+            message: error,
+        };
+    }
+    match run_git_timeout(folder, &["merge", "--ff-only", "@{upstream}"], MERGE_TIMEOUT) {
         Ok(output) => ActionResult {
             ok: true,
             message: if output.is_empty() {
@@ -457,7 +528,8 @@ fn push_repository_sync(folder: &str) -> ActionResult {
 }
 
 fn switch_repository_sync(folder: &str, branch: &str) -> ActionResult {
-    match run_git(folder, &["switch", branch]) {
+    // `--` so branch names can't be parsed as options; timeout covers LFS hangs.
+    match run_git_timeout(folder, &["switch", "--", branch], SWITCH_TIMEOUT) {
         Ok(output) => ActionResult {
             ok: true,
             message: if output.is_empty() {
@@ -495,7 +567,10 @@ async fn inspect_repository(folder: String) -> RepositoryState {
     let folder_for_err = folder.clone();
     tauri::async_runtime::spawn_blocking(move || inspect(&folder))
         .await
-        .unwrap_or_else(|_| worker_panic_state(&folder_for_err))
+        .unwrap_or_else(|error| {
+            eprintln!("inspect_repository worker failed: {error}");
+            worker_panic_state(&folder_for_err)
+        })
 }
 
 #[tauri::command]
@@ -506,21 +581,30 @@ async fn refresh_repository(folder: String) -> RepositoryState {
         inspect(&folder)
     })
     .await
-    .unwrap_or_else(|_| worker_panic_state(&folder_for_err))
+    .unwrap_or_else(|error| {
+        eprintln!("refresh_repository worker failed: {error}");
+        worker_panic_state(&folder_for_err)
+    })
 }
 
 #[tauri::command]
 async fn list_recent_branches(folder: String) -> Result<Vec<BranchInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || list_recent_branches_sync(&folder))
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| {
+            eprintln!("list_recent_branches worker failed: {error}");
+            error.to_string()
+        })?
 }
 
 #[tauri::command]
 async fn search_remote_branches(folder: String, query: String) -> Result<Vec<BranchInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || search_remote_branches_sync(&folder, &query))
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| {
+            eprintln!("search_remote_branches worker failed: {error}");
+            error.to_string()
+        })?
 }
 
 #[tauri::command]
@@ -580,4 +664,33 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hamgit");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_branch_lines_handles_pipe_in_name() {
+        let output = format!(
+            "feat|x{nul}1 day ago{nul}1700000000\nmain{nul}2 hours ago{nul}1700000001\n",
+            nul = '\0'
+        );
+        let branches = parse_branch_lines(&output, None);
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[0].name, "feat|x");
+        assert_eq!(branches[0].last_commit_relative, "1 day ago");
+        assert_eq!(branches[1].name, "main");
+    }
+
+    #[test]
+    fn parse_branch_lines_strips_origin_and_skips_head() {
+        let output = format!(
+            "origin/HEAD{nul}{nul}\norigin/feature{nul}3d ago{nul}1\n",
+            nul = '\0'
+        );
+        let branches = parse_branch_lines(&output, Some("origin/"));
+        assert_eq!(branches.len(), 1);
+        assert_eq!(branches[0].name, "feature");
+    }
 }

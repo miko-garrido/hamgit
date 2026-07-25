@@ -35,11 +35,17 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
   useEffect(() => {
     let cancelled = false;
     setPhase("loading");
-    invoke<BranchInfo[]>("list_recent_branches", { folder }).then((branches) => {
-      if (cancelled) return;
-      setRecents(branches);
-      setPhase("idle");
-    });
+    invoke<BranchInfo[]>("list_recent_branches", { folder })
+      .then((branches) => {
+        if (cancelled) return;
+        setRecents(branches);
+        setPhase("idle");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRecents([]);
+        setPhase("idle");
+      });
     return () => {
       cancelled = true;
     };
@@ -66,13 +72,19 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
     const id = ++requestId.current;
     setPhase("searching");
     await afterPaint();
-    const results = await invoke<BranchInfo[]>("search_remote_branches", {
-      folder,
-      query: searchQuery,
-    });
-    if (id !== requestId.current) return;
-    setSearchResults(results);
-    setPhase(results.length === 0 ? "no-matches" : "idle");
+    try {
+      const results = await invoke<BranchInfo[]>("search_remote_branches", {
+        folder,
+        query: searchQuery,
+      });
+      if (id !== requestId.current) return;
+      setSearchResults(results);
+      setPhase(results.length === 0 ? "no-matches" : "idle");
+    } catch {
+      if (id !== requestId.current) return;
+      setSearchResults([]);
+      setPhase("no-matches");
+    }
   }
 
   function selectBranch(branch: string) {

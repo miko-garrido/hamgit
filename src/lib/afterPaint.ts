@@ -1,13 +1,26 @@
 /**
- * Yield until after the browser has painted at least once.
- * React 18 batches setState with the following await in the same tick, so busy
- * spinners set just before `invoke` often never flush. Double-rAF waits for the
- * style/layout commit that follows the state update.
+ * Yield until after a paint, or give up quickly when painting is suspended.
+ *
+ * Double-rAF alone hangs forever while the window is minimized/occluded
+ * (WebKit suspends display-link callbacks). Race against a short timer and
+ * skip entirely when the document is hidden.
  */
 export function afterPaint(): Promise<void> {
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    return Promise.resolve();
+  }
+
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = window.setTimeout(finish, 50);
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => resolve());
+      requestAnimationFrame(finish);
     });
   });
 }

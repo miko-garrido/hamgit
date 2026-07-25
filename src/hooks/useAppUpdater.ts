@@ -74,6 +74,10 @@ export function useAppUpdater(show: Show, dismiss: Dismiss) {
       })();
     }, UPDATER_DELAY_MS);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      // Allow a remount (e.g. dep identity change) to schedule again.
+      started.current = false;
+    };
   }, [show, dismiss]);
 }
