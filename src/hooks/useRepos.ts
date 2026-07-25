@@ -93,32 +93,47 @@ export function useRepos() {
     );
   }, []);
 
-  const refreshFolders = useCallback(async (folders: string[]) => {
-    if (folders.length === 0) return;
-    folders.forEach((folder) => updateRow(folder, { refreshing: true }));
+  const loadFoldersState = useCallback(
+    async (folders: string[], command: "refresh_repository" | "inspect_repository") => {
+      if (folders.length === 0) return;
+      folders.forEach((folder) => updateRow(folder, { refreshing: true }));
 
-    await runLimited(folders, REFRESH_CONCURRENCY, async (folder) => {
-      try {
-        const state = await invoke<RepositoryState>("inspect_repository", { folder });
-        setRows((current) =>
-          current.map((row) =>
-            row.folder === folder
-              ? { ...row, ...state, loaded: true, refreshing: false, note: state.error }
-              : row,
-          ),
-        );
-      } catch (error) {
-        updateRow(folder, {
-          loaded: true,
-          refreshing: false,
-          status: "Error",
-          remote: "unknown",
-          error: String(error),
-          note: String(error),
-        });
-      }
-    });
-  }, [updateRow]);
+      await runLimited(folders, REFRESH_CONCURRENCY, async (folder) => {
+        try {
+          const state = await invoke<RepositoryState>(command, { folder });
+          setRows((current) =>
+            current.map((row) =>
+              row.folder === folder
+                ? { ...row, ...state, loaded: true, refreshing: false, note: state.error }
+                : row,
+            ),
+          );
+        } catch (error) {
+          updateRow(folder, {
+            loaded: true,
+            refreshing: false,
+            status: "Error",
+            remote: "unknown",
+            error: String(error),
+            note: String(error),
+          });
+        }
+      });
+    },
+    [updateRow],
+  );
+
+  /** Manual / timed refresh: best-effort fetch then inspect. */
+  const refreshFolders = useCallback(
+    async (folders: string[]) => loadFoldersState(folders, "refresh_repository"),
+    [loadFoldersState],
+  );
+
+  /** Post-action refresh: local inspect only (refs already updated by the action). */
+  const inspectFolders = useCallback(
+    async (folders: string[]) => loadFoldersState(folders, "inspect_repository"),
+    [loadFoldersState],
+  );
 
   // Initial load: refresh once the repo list first populates.
   const initialRefreshDone = useRef(false);
@@ -187,13 +202,13 @@ export function useRepos() {
           failed.push({ folder: row.folder, repo: row.repo, message: String(error) });
         } finally {
           updateRow(row.folder, { acting: false, actingVerb: null });
-          await refreshFolders([row.folder]);
+          await inspectFolders([row.folder]);
         }
       });
 
       return { succeeded, failed, skipped };
     },
-    [updateRow, refreshFolders],
+    [updateRow, inspectFolders],
   );
 
   const pullRows = useCallback(
@@ -243,7 +258,7 @@ export function useRepos() {
       try {
         const result = await invoke<ActionResult>("switch_repository", { folder, branch });
         updateRow(folder, { acting: false, actingVerb: null, note: result.message });
-        await refreshFolders([folder]);
+        await inspectFolders([folder]);
         return result;
       } catch (error) {
         const message = String(error);
@@ -251,7 +266,7 @@ export function useRepos() {
         return { ok: false, message };
       }
     },
-    [updateRow, refreshFolders],
+    [updateRow, inspectFolders],
   );
 
   const revealInFinder = useCallback(async (folder: string) => {
