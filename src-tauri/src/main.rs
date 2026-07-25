@@ -1,6 +1,11 @@
 use serde::Serialize;
+use std::io::Read;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+const FETCH_TIMEOUT: Duration = Duration::from_secs(12);
+const NETWORK_GIT_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,11 +56,19 @@ struct BranchInfo {
     last_commit_unix: i64,
 }
 
+fn apply_noninteractive_git_env(cmd: &mut Command) {
+    // Credential helpers / prompts must never block the UI forever.
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
+        .stdin(Stdio::null());
+}
+
 fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(args)
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(repo).args(args);
+    apply_noninteractive_git_env(&mut cmd);
+
+    let output = cmd
         .output()
         .map_err(|error| format!("failed to run git: {error}"))?;
 
@@ -68,12 +81,92 @@ fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// Runs git with a hard timeout. Used for network ops (pull/push) so auth or
+/// hung remotes cannot freeze a worker indefinitely.
+fn run_git_timeout(repo: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(repo)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_noninteractive_git_env(&mut cmd);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|error| format!("failed to run git: {error}"))?;
+
+    let mut stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| "failed to capture git stdout".to_string())?;
+    let mut stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| "failed to capture git stderr".to_string())?;
+
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr_pipe.read_to_end(&mut buf);
+        buf
+    });
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "git timed out after {}s",
+                    timeout.as_secs()
+                ));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(error) => return Err(format!("failed to wait for git: {error}")),
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&stdout_handle.join().unwrap_or_default())
+        .trim()
+        .to_string();
+    let stderr = String::from_utf8_lossy(&stderr_handle.join().unwrap_or_default())
+        .trim()
+        .to_string();
+
+    if status.success() {
+        Ok(stdout)
+    } else {
+        Err(if stderr.is_empty() { stdout } else { stderr })
+    }
+}
+
 fn repo_name(folder: &str) -> String {
     Path::new(folder)
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(folder)
         .to_string()
+}
+
+fn worker_panic_state(folder: &str) -> RepositoryState {
+    RepositoryState {
+        folder: folder.to_string(),
+        repo: repo_name(folder),
+        branch: None,
+        status: StatusLabel::Error,
+        remote: RemoteLabel::Unknown,
+        is_dirty: false,
+        has_conflicts: false,
+        is_detached: false,
+        error: Some("internal error".to_string()),
+    }
 }
 
 fn parse_remote(repo: &str) -> RemoteLabel {
@@ -179,25 +272,34 @@ fn inspect(repo: &str) -> RepositoryState {
     }
 }
 
-#[tauri::command]
-fn inspect_repository(folder: String) -> RepositoryState {
-    inspect(&folder)
-}
-
-/// Best-effort remote ref refresh. Failures (offline, auth) are ignored so
-/// callers can still inspect local state.
+/// Best-effort remote ref refresh. Failures (offline, auth, timeout) are
+/// ignored so callers can still inspect local state.
 fn fetch_remote(repo: &str) {
-    let _ = Command::new("git")
-        .arg("-C")
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
         .arg(repo)
         .args(["fetch", "--prune", "--quiet"])
-        .output();
-}
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    apply_noninteractive_git_env(&mut cmd);
 
-#[tauri::command]
-fn refresh_repository(folder: String) -> RepositoryState {
-    fetch_remote(&folder);
-    inspect(&folder)
+    let Ok(mut child) = cmd.spawn() else {
+        return;
+    };
+
+    let deadline = Instant::now() + FETCH_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(_) => return,
+        }
+    }
 }
 
 const BRANCH_FORMAT: &str = "%(refname:short)|%(committerdate:relative)|%(committerdate:unix)";
@@ -250,10 +352,9 @@ fn parse_branch_lines(output: &str, strip_prefix: Option<&str>) -> Vec<BranchInf
     branches
 }
 
-#[tauri::command]
-fn list_recent_branches(folder: String) -> Result<Vec<BranchInfo>, String> {
+fn list_recent_branches_sync(folder: &str) -> Result<Vec<BranchInfo>, String> {
     let remote_output = run_git(
-        &folder,
+        folder,
         &[
             "for-each-ref",
             "refs/remotes/origin",
@@ -267,7 +368,7 @@ fn list_recent_branches(folder: String) -> Result<Vec<BranchInfo>, String> {
 
     if branches.is_empty() {
         let local_output = run_git(
-            &folder,
+            folder,
             &[
                 "for-each-ref",
                 "refs/heads",
@@ -282,14 +383,13 @@ fn list_recent_branches(folder: String) -> Result<Vec<BranchInfo>, String> {
     Ok(branches)
 }
 
-#[tauri::command]
-fn search_remote_branches(folder: String, query: String) -> Result<Vec<BranchInfo>, String> {
+fn search_remote_branches_sync(folder: &str, query: &str) -> Result<Vec<BranchInfo>, String> {
     // Best-effort refresh of the remote ref cache; offline should still be
     // able to search whatever refs are already known locally.
-    fetch_remote(&folder);
+    fetch_remote(folder);
 
     let remote_output = run_git(
-        &folder,
+        folder,
         &[
             "for-each-ref",
             "refs/remotes/origin",
@@ -303,7 +403,7 @@ fn search_remote_branches(folder: String, query: String) -> Result<Vec<BranchInf
 
     if branches.is_empty() {
         let local_output = run_git(
-            &folder,
+            folder,
             &[
                 "for-each-ref",
                 "refs/heads",
@@ -322,9 +422,8 @@ fn search_remote_branches(folder: String, query: String) -> Result<Vec<BranchInf
         .collect())
 }
 
-#[tauri::command]
-fn pull_repository(folder: String) -> ActionResult {
-    match run_git(&folder, &["pull", "--ff-only"]) {
+fn pull_repository_sync(folder: &str) -> ActionResult {
+    match run_git_timeout(folder, &["pull", "--ff-only"], NETWORK_GIT_TIMEOUT) {
         Ok(output) => ActionResult {
             ok: true,
             message: if output.is_empty() {
@@ -340,9 +439,8 @@ fn pull_repository(folder: String) -> ActionResult {
     }
 }
 
-#[tauri::command]
-fn push_repository(folder: String) -> ActionResult {
-    match run_git(&folder, &["push"]) {
+fn push_repository_sync(folder: &str) -> ActionResult {
+    match run_git_timeout(folder, &["push"], NETWORK_GIT_TIMEOUT) {
         Ok(output) => ActionResult {
             ok: true,
             message: if output.is_empty() {
@@ -358,9 +456,8 @@ fn push_repository(folder: String) -> ActionResult {
     }
 }
 
-#[tauri::command]
-fn switch_repository(folder: String, branch: String) -> ActionResult {
-    match run_git(&folder, &["switch", &branch]) {
+fn switch_repository_sync(folder: &str, branch: &str) -> ActionResult {
+    match run_git(folder, &["switch", branch]) {
         Ok(output) => ActionResult {
             ok: true,
             message: if output.is_empty() {
@@ -376,9 +473,8 @@ fn switch_repository(folder: String, branch: String) -> ActionResult {
     }
 }
 
-#[tauri::command]
-fn reveal_in_finder(folder: String) -> ActionResult {
-    match Command::new("open").args(["-R", &folder]).status() {
+fn reveal_in_finder_sync(folder: &str) -> ActionResult {
+    match Command::new("open").args(["-R", folder]).status() {
         Ok(status) if status.success() => ActionResult {
             ok: true,
             message: "Revealed in Finder".to_string(),
@@ -392,6 +488,79 @@ fn reveal_in_finder(folder: String) -> ActionResult {
             message: error.to_string(),
         },
     }
+}
+
+#[tauri::command]
+async fn inspect_repository(folder: String) -> RepositoryState {
+    let folder_for_err = folder.clone();
+    tauri::async_runtime::spawn_blocking(move || inspect(&folder))
+        .await
+        .unwrap_or_else(|_| worker_panic_state(&folder_for_err))
+}
+
+#[tauri::command]
+async fn refresh_repository(folder: String) -> RepositoryState {
+    let folder_for_err = folder.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_remote(&folder);
+        inspect(&folder)
+    })
+    .await
+    .unwrap_or_else(|_| worker_panic_state(&folder_for_err))
+}
+
+#[tauri::command]
+async fn list_recent_branches(folder: String) -> Result<Vec<BranchInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || list_recent_branches_sync(&folder))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn search_remote_branches(folder: String, query: String) -> Result<Vec<BranchInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || search_remote_branches_sync(&folder, &query))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn pull_repository(folder: String) -> ActionResult {
+    tauri::async_runtime::spawn_blocking(move || pull_repository_sync(&folder))
+        .await
+        .unwrap_or_else(|error| ActionResult {
+            ok: false,
+            message: error.to_string(),
+        })
+}
+
+#[tauri::command]
+async fn push_repository(folder: String) -> ActionResult {
+    tauri::async_runtime::spawn_blocking(move || push_repository_sync(&folder))
+        .await
+        .unwrap_or_else(|error| ActionResult {
+            ok: false,
+            message: error.to_string(),
+        })
+}
+
+#[tauri::command]
+async fn switch_repository(folder: String, branch: String) -> ActionResult {
+    tauri::async_runtime::spawn_blocking(move || switch_repository_sync(&folder, &branch))
+        .await
+        .unwrap_or_else(|error| ActionResult {
+            ok: false,
+            message: error.to_string(),
+        })
+}
+
+#[tauri::command]
+async fn reveal_in_finder(folder: String) -> ActionResult {
+    tauri::async_runtime::spawn_blocking(move || reveal_in_finder_sync(&folder))
+        .await
+        .unwrap_or_else(|error| ActionResult {
+            ok: false,
+            message: error.to_string(),
+        })
 }
 
 fn main() {

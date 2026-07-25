@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { afterPaint } from "../lib/afterPaint";
 import { invoke, pickDirectories } from "../lib/invoke";
 import { folderName } from "../lib/format";
 import type {
@@ -97,6 +98,8 @@ export function useRepos() {
     async (folders: string[], command: "refresh_repository" | "inspect_repository") => {
       if (folders.length === 0) return;
       folders.forEach((folder) => updateRow(folder, { refreshing: true }));
+      // Let title-bar / row spinners paint before the first invoke.
+      await afterPaint();
 
       await runLimited(folders, REFRESH_CONCURRENCY, async (folder) => {
         try {
@@ -143,16 +146,22 @@ export function useRepos() {
     [loadFoldersState],
   );
 
-  // Initial load: refresh once the repo list first populates.
+  // Initial load: inspect locally first so rows paint quickly, then fetch in
+  // the background (refresh_repository) without blocking first content.
   const initialRefreshDone = useRef(false);
   useEffect(() => {
     if (rows.length > 0 && !initialRefreshDone.current) {
       initialRefreshDone.current = true;
-      void refreshFolders(rows.map((row) => row.folder));
+      const folders = rows.map((row) => row.folder);
+      void (async () => {
+        await inspectFolders(folders);
+        void refreshFolders(folders);
+      })();
     }
-  }, [rows, refreshFolders]);
+  }, [rows, inspectFolders, refreshFolders]);
 
   // Hardcoded 30s auto-refresh; skips rows with actions in flight.
+  // Runs async (Tauri commands are spawn_blocking) so painting stays free.
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (refreshInFlight.current) return;
@@ -201,11 +210,16 @@ export function useRepos() {
       const succeeded: string[] = [];
       const failed: { folder: string; repo: string; message: string }[] = [];
 
+      // Paint acting labels before the first network/git invoke.
+      for (const row of allowed) {
+        updateRow(row.folder, { acting: true, actingVerb: verb });
+      }
+      await afterPaint();
+
       await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
         // Keep acting true through the post-action inspect so the remote cell
         // shows "Pulling…" / "Pushing…" / "Syncing…" until refresh lands
         // (DESIGN.md + Paper "Remote updating").
-        updateRow(row.folder, { acting: true, actingVerb: verb });
         try {
           await run(row);
           succeeded.push(row.folder);
@@ -268,6 +282,7 @@ export function useRepos() {
       // Branch cell stays on "Switching to…" until the post-action refresh
       // lands (Paper "Branch selected — row shows switching state").
       updateRow(folder, { acting: true, actingVerb: "switch", note: `Switching to ${branch}…` });
+      await afterPaint();
       try {
         const result = await invoke<ActionResult>("switch_repository", { folder, branch });
         await inspectFolders([folder]);

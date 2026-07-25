@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GitBranch, Loader2, Search } from "lucide-react";
+import { afterPaint } from "../lib/afterPaint";
 import { invoke } from "../lib/invoke";
 import type { BranchInfo } from "../types";
 
@@ -64,6 +65,7 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
   async function runSearch(searchQuery: string) {
     const id = ++requestId.current;
     setPhase("searching");
+    await afterPaint();
     const results = await invoke<BranchInfo[]>("search_remote_branches", {
       folder,
       query: searchQuery,

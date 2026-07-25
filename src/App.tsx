@@ -12,6 +12,7 @@ import { SelectionBar } from "./components/SelectionBar";
 import type { SelectionBarAction } from "./components/SelectionBar";
 import { Dialog } from "./components/Dialog";
 import { BranchPalette } from "./components/BranchPalette";
+import { afterPaint } from "./lib/afterPaint";
 import { errorSummary, formatList } from "./lib/format";
 import type { RepoRow, BulkActionResult } from "./types";
 
@@ -260,6 +261,7 @@ export function App() {
     // Long-running actions stay in the menu with spinner + present-tense label
     // (Paper processing / node mid-pull state) until the work finishes.
     setRunningMenuAction(action);
+    await afterPaint();
     try {
       if (action === "refresh") {
         await refreshFolders([folder]);
@@ -287,12 +289,14 @@ export function App() {
 
     if (action === "refresh") {
       setRunningBarAction("refresh");
+      await afterPaint();
       await refreshFolders(folders);
       setRunningBarAction(null);
       return;
     }
 
     setRunningBarAction(action);
+    await afterPaint();
     try {
       await runBulk(action, targetRows, { fromSelectionBar: true });
     } finally {
