@@ -41,6 +41,7 @@ export function App() {
   const [menu, setMenu] = useState<MenuState>(null);
   const [palette, setPalette] = useState<PaletteState>(null);
   const [runningBarAction, setRunningBarAction] = useState<SelectionBarAction | null>(null);
+  const [runningMenuAction, setRunningMenuAction] = useState<ContextMenuAction | null>(null);
 
   const isRefreshing = rows.some((row) => row.refreshing);
   const hasRepos = rows.length > 0;
@@ -229,36 +230,43 @@ export function App() {
     // Single-repo context-menu action on success: silent, the row shows the result.
   }
 
-  function handleMenuAction(action: ContextMenuAction) {
-    if (!menu) return;
+  async function handleMenuAction(action: ContextMenuAction) {
+    if (!menu || runningMenuAction !== null) return;
     const folder = menu.folder;
     const targetRows = rowsFor([folder]);
     // A row already running an action must not start a second one — a push
     // overwriting a mid-flight sync would break its pull-then-push atomicity.
     if (targetRows.some((row) => row.acting) && action !== "reveal") return;
 
-    switch (action) {
-      case "refresh":
-        void refreshFolders([folder]);
-        break;
-      case "pull":
-        void runBulk("pull", targetRows, { fromSelectionBar: false });
-        break;
-      case "push":
-        void runBulk("push", targetRows, { fromSelectionBar: false });
-        break;
-      case "sync":
-        void runBulk("sync", targetRows, { fromSelectionBar: false });
-        break;
-      case "switch-branch":
-        onSwitchBranch(folder);
-        break;
-      case "reveal":
-        void revealInFinder(folder);
-        break;
-      case "remove":
-        confirmRemove([folder]);
-        break;
+    // Instant UI actions: close the menu, then open palette / dialog / Finder.
+    if (action === "switch-branch") {
+      setMenu(null);
+      onSwitchBranch(folder);
+      return;
+    }
+    if (action === "remove") {
+      setMenu(null);
+      confirmRemove([folder]);
+      return;
+    }
+    if (action === "reveal") {
+      setMenu(null);
+      void revealInFinder(folder);
+      return;
+    }
+
+    // Long-running actions stay in the menu with spinner + present-tense label
+    // (Paper processing / node mid-pull state) until the work finishes.
+    setRunningMenuAction(action);
+    try {
+      if (action === "refresh") {
+        await refreshFolders([folder]);
+      } else {
+        await runBulk(action, targetRows, { fromSelectionBar: false });
+      }
+    } finally {
+      setRunningMenuAction(null);
+      setMenu(null);
     }
   }
 
@@ -320,8 +328,14 @@ export function App() {
         <ContextMenu
           x={menu.x}
           y={menu.y}
-          onAction={handleMenuAction}
-          onClose={() => setMenu(null)}
+          runningAction={runningMenuAction}
+          onAction={(action) => {
+            void handleMenuAction(action);
+          }}
+          onClose={() => {
+            if (runningMenuAction !== null) return;
+            setMenu(null);
+          }}
         />
       )}
 

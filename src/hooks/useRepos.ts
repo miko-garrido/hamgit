@@ -104,7 +104,15 @@ export function useRepos() {
           setRows((current) =>
             current.map((row) =>
               row.folder === folder
-                ? { ...row, ...state, loaded: true, refreshing: false, note: state.error }
+                ? {
+                    ...row,
+                    ...state,
+                    loaded: true,
+                    refreshing: false,
+                    // Keep the in-flight label (e.g. "Switching to…") while acting;
+                    // otherwise surface the inspect error as a row note.
+                    note: row.acting ? row.note : state.error,
+                  }
                 : row,
             ),
           );
@@ -194,6 +202,9 @@ export function useRepos() {
       const failed: { folder: string; repo: string; message: string }[] = [];
 
       await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
+        // Keep acting true through the post-action inspect so the remote cell
+        // shows "Pulling…" / "Pushing…" / "Syncing…" until refresh lands
+        // (DESIGN.md + Paper "Remote updating").
         updateRow(row.folder, { acting: true, actingVerb: verb });
         try {
           await run(row);
@@ -201,8 +212,8 @@ export function useRepos() {
         } catch (error) {
           failed.push({ folder: row.folder, repo: row.repo, message: String(error) });
         } finally {
-          updateRow(row.folder, { acting: false, actingVerb: null });
           await inspectFolders([row.folder]);
+          updateRow(row.folder, { acting: false, actingVerb: null });
         }
       });
 
@@ -254,11 +265,13 @@ export function useRepos() {
    */
   const switchBranch = useCallback(
     async (folder: string, branch: string): Promise<ActionResult> => {
+      // Branch cell stays on "Switching to…" until the post-action refresh
+      // lands (Paper "Branch selected — row shows switching state").
       updateRow(folder, { acting: true, actingVerb: "switch", note: `Switching to ${branch}…` });
       try {
         const result = await invoke<ActionResult>("switch_repository", { folder, branch });
-        updateRow(folder, { acting: false, actingVerb: null, note: result.message });
         await inspectFolders([folder]);
+        updateRow(folder, { acting: false, actingVerb: null, note: result.message });
         return result;
       } catch (error) {
         const message = String(error);

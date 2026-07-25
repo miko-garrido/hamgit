@@ -94,9 +94,9 @@ export function RepoRow({
         {!row.loaded ? (
           <span className="text-slate-400">–</span>
         ) : row.acting && row.actingVerb === "switch" ? (
-          <span className="flex items-center gap-1.5 text-slate-500">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {row.note}
+          <span className="flex items-center gap-1.5 text-slate-500" aria-live="polite">
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+            <span className="truncate">{row.note ?? "Switching…"}</span>
           </span>
         ) : (
           <TruncatedBranch className="block truncate">{branchLabel}</TruncatedBranch>
@@ -118,8 +118,8 @@ export function RepoRow({
         {!row.loaded ? (
           ""
         ) : row.acting && (row.actingVerb === "pull" || row.actingVerb === "push" || row.actingVerb === "sync") ? (
-          <span className="flex items-center gap-1.5">
-            <Loader2 className="h-3 w-3 animate-spin" />
+          <span className="flex items-center gap-1.5" aria-live="polite">
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
             {row.actingVerb === "pull" ? "Pulling…" : row.actingVerb === "push" ? "Pushing…" : "Syncing…"}
           </span>
         ) : (
