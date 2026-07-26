@@ -151,8 +151,8 @@ at ~160px from window top.
 - **Header row** (48px, hairline below): search icon, input placeholder "Switch {repo} to branch…", `esc` key chip (11px, bordered 4px radius).
 - **List**: overline "Recent on origin" (11px medium slate-400); rows 34px, 6px radius: git-branch icon, branch name 14px, relative time right-aligned 12px slate-400 (e.g. "2h ago"). Active/keyboard-focused row: slate-100 fill. Data: remote branches sorted by most recent commit date.
 - **Footer** (36px, hairline above, slate-50 fill): "↑↓ navigate · ⏎ switch · type to filter" (11px slate-400).
-- **Typing**: filters the cached branch list live; matched substring bold; count overline "N matches"; footer hint "Press ⏎ to search origin for more".
-- **Enter (no local match focus)**: fetches from origin — spinner + "Searching origin for "{query}"…".
+- **Typing**: filters all known origin remote-tracking refs live; matched substring bold; count overline "N matches". Empty query still shows only the 20 most recent.
+- **No cached match**: automatically fetches from origin after a short debounce — spinner + "Searching origin for "{query}"…" (⏎ still retries if needed).
 - **No matches**: "No branches match "{query}"" + "Checked local and origin · Esc to dismiss".
 - **Select** (click or ⏎): closes palette, row's branch cell enters switching state. If the repo is dirty, show the Warning dialog first ("uncommitted changes… Switch anyway").
 

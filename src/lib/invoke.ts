@@ -107,9 +107,9 @@ const MOCK_RECENT_BRANCHES: BranchInfo[] = [
 
 /**
  * Larger hidden branch set searched by search_remote_branches, so the
- * Enter -> search flow can surface branches absent from the recents list
- * (e.g. "fix/auth-retry"), and a query matching nothing exercises the
- * no-matches state.
+ * auto origin search (and Enter retry) can surface branches absent from the
+ * recents/mock cache (e.g. "fix/auth-retry"), and a query matching nothing
+ * exercises the no-matches state.
  */
 const MOCK_ALL_BRANCHES: BranchInfo[] = [
   ...MOCK_RECENT_BRANCHES,

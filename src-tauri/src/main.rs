@@ -424,7 +424,6 @@ fn fetch_remote(repo: &str) -> bool {
 /// NUL-delimited so branch names containing `|` parse correctly.
 const BRANCH_FORMAT: &str =
     "%(refname:short)%00%(committerdate:relative)%00%(committerdate:unix)";
-const RECENT_BRANCH_CAP: usize = 20;
 
 /// Parses `for-each-ref` output using BRANCH_FORMAT into BranchInfo, stripping
 /// an optional remote prefix (e.g. "origin/") from the ref name and skipping
@@ -500,7 +499,8 @@ fn list_recent_branches_sync(folder: &str) -> Result<Vec<BranchInfo>, String> {
         branches = parse_branch_lines(&local_output, None);
     }
 
-    branches.truncate(RECENT_BRANCH_CAP);
+    // Return the full remote-tracking set so the palette can filter every
+    // known origin branch while typing. The UI caps the empty-query view.
     Ok(branches)
 }
 

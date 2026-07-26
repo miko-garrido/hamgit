@@ -14,10 +14,16 @@ type Props = {
 
 type Phase = "loading" | "idle" | "searching" | "no-matches";
 
+/** Empty-query list shows only the most recent origin branches. */
+const RECENT_DISPLAY_CAP = 20;
+
+/** Wait briefly after typing before fetching origin for unmatched queries. */
+const REMOTE_SEARCH_DEBOUNCE_MS = 200;
+
 /**
  * Command-palette style branch switcher per DESIGN.md "Branch palette".
- * Opens with recent-on-origin branches, filters locally while typing, and
- * falls through to a live origin search on Enter when nothing is focused.
+ * Opens with recent-on-origin branches, filters all known remote-tracking
+ * refs while typing, and auto-fetches origin when the cache has no matches.
  */
 export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }: Props) {
   const [recents, setRecents] = useState<BranchInfo[]>([]);
@@ -51,12 +57,20 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
     };
   }, [folder]);
 
-  const filtered = useMemo(() => {
-    const source = searchResults ?? recents;
+  const cachedMatches = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return source;
-    return source.filter((branch) => branch.name.toLowerCase().includes(needle));
-  }, [searchResults, recents, query]);
+    if (!needle) return recents;
+    return recents.filter((branch) => branch.name.toLowerCase().includes(needle));
+  }, [recents, query]);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return recents.slice(0, RECENT_DISPLAY_CAP);
+    if (searchResults) {
+      return searchResults.filter((branch) => branch.name.toLowerCase().includes(needle));
+    }
+    return cachedMatches;
+  }, [recents, cachedMatches, searchResults, query]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -65,7 +79,9 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
   useEffect(() => {
     // Typing again after a completed search invalidates the stale result set.
     setSearchResults(null);
-    if (phase === "no-matches") setPhase("idle");
+    if (phase === "no-matches" || phase === "searching") setPhase("idle");
+    // Bump so an in-flight origin search is ignored.
+    requestId.current += 1;
   }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function runSearch(searchQuery: string) {
@@ -86,6 +102,23 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
       setPhase("no-matches");
     }
   }
+
+  // When the local remote-tracking cache has no matches, fetch + search origin.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    // Wait until recents are loaded; skip while a search is already in flight
+    // so the phase→"searching" transition does not schedule a second fetch.
+    if (phase === "loading" || phase === "searching") return;
+    if (cachedMatches.length > 0) return;
+    if (searchResults !== null) return;
+
+    const timer = window.setTimeout(() => {
+      void runSearch(trimmed);
+    }, REMOTE_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, cachedMatches, searchResults, folder, phase]);
 
   function selectBranch(branch: string) {
     if (branch === currentBranch) {
@@ -134,9 +167,11 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
         : "Recent on origin";
 
   const footerHint =
-    phase === "idle" && query.trim() && !searchResults
-      ? 'Press ⏎ to search origin for more'
-      : "↑↓ navigate · ⏎ switch · type to filter";
+    phase === "searching"
+      ? "Searching origin…"
+      : phase === "idle" && query.trim() && cachedMatches.length === 0 && !searchResults
+        ? "Searching origin…"
+        : "↑↓ navigate · ⏎ switch · type to filter";
 
   return (
     <div
