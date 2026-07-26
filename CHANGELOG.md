@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/miko-garrido/hamgit/compare/v0.1.3...v0.1.4) (2026-07-26)
+
+
+### Bug Fixes
+
+* search all origin branches in the branch switcher ([8986842](https://github.com/miko-garrido/hamgit/commit/898684297228047028c91928c20742ce0025cc80))
+
 ## [0.1.3](https://github.com/miko-garrido/hamgit/compare/v0.1.2...v0.1.3) (2026-07-25)
 
 
