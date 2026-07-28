@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/miko-garrido/hamgit/compare/v0.1.4...v0.2.0) (2026-07-28)
+
+
+### Features
+
+* add bulk repository controls ([51eb6c9](https://github.com/miko-garrido/hamgit/commit/51eb6c91a618bd2db681d28da4268f848cf2b595))
+
 ## [0.1.4](https://github.com/miko-garrido/hamgit/compare/v0.1.3...v0.1.4) (2026-07-26)
 
 
