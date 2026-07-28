@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { Check, Minus } from "lucide-react";
 import { RepoRow } from "./RepoRow";
 import type { RepoRow as RepoRowType, SortColumn, SortDirection } from "../types";
 import { useColumnWidths } from "../hooks/useColumnWidths";
@@ -7,7 +8,8 @@ import type { ResizableColumn } from "../hooks/useColumnWidths";
 type Props = {
   rows: RepoRowType[];
   isSelected: (folder: string) => boolean;
-  onToggle: (folder: string) => void;
+  onToggleAll: (order: string[]) => void;
+  onToggle: (folder: string, order: string[], event: React.MouseEvent) => void;
   onRowClick: (folder: string, order: string[], event: React.MouseEvent) => void;
   onContextMenu?: (folder: string, event: React.MouseEvent) => void;
   sortColumn: SortColumn;
@@ -29,6 +31,7 @@ const SIDE_PADDING = 32;
 export function RepoTable({
   rows,
   isSelected,
+  onToggleAll,
   onToggle,
   onRowClick,
   onContextMenu,
@@ -37,6 +40,9 @@ export function RepoTable({
   onSort,
 }: Props) {
   const order = rows.map((row) => row.folder);
+  const selectedCount = order.reduce((count, folder) => count + (isSelected(folder) ? 1 : 0), 0);
+  const allSelected = order.length > 0 && selectedCount === order.length;
+  const partiallySelected = selectedCount > 0 && !allSelected;
   const arrow = sortDirection === "asc" ? "↑" : "↓";
   const { widths, setColumnWidth } = useColumnWidths();
   // This ref is the single element that scrolls both axes (header + rows
@@ -104,7 +110,26 @@ export function RepoTable({
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto">
         <div className="relative px-4" style={{ minWidth: contentMinWidth }}>
           <div className="sticky top-0 z-20 flex h-8 shrink-0 items-center bg-background text-sm font-medium text-slate-500">
-            <div className="w-9 shrink-0" aria-hidden />
+            <div className="flex w-9 shrink-0 items-center justify-center">
+              <button
+                type="button"
+                role="checkbox"
+                aria-label={allSelected ? "Deselect all rows" : "Select all rows"}
+                aria-checked={partiallySelected ? "mixed" : allSelected}
+                onClick={() => onToggleAll(order)}
+                className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+                  allSelected || partiallySelected
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-400 bg-white hover:border-slate-600"
+                }`}
+              >
+                {allSelected ? (
+                  <Check className="h-3 w-3" strokeWidth={3} />
+                ) : partiallySelected ? (
+                  <Minus className="h-3 w-3" strokeWidth={3} />
+                ) : null}
+              </button>
+            </div>
             {headers.map((header) => {
               const isSorted = header.sortable && header.key === sortColumn;
               const resizable = RESIZABLE.includes(header.key as ResizableColumn);
@@ -148,7 +173,7 @@ export function RepoTable({
               isSelected={isSelected(row.folder)}
               prevSelected={index > 0 ? isSelected(rows[index - 1].folder) : false}
               nextSelected={index < rows.length - 1 ? isSelected(rows[index + 1].folder) : false}
-              onToggle={onToggle}
+              onToggle={(folder, event) => onToggle(folder, order, event)}
               onRowClick={(folder, event) => onRowClick(folder, order, event)}
               onContextMenu={onContextMenu}
               widths={widths}

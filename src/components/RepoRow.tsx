@@ -11,7 +11,7 @@ type Props = {
   isSelected: boolean;
   prevSelected: boolean;
   nextSelected: boolean;
-  onToggle: (folder: string) => void;
+  onToggle: (folder: string, event: React.MouseEvent) => void;
   onRowClick: (folder: string, event: React.MouseEvent) => void;
   onContextMenu?: (folder: string, event: React.MouseEvent) => void;
   widths: ColumnWidths;
@@ -61,7 +61,7 @@ export function RepoRow({
           aria-label={isSelected ? "Deselect row" : "Select row"}
           onClick={(event) => {
             event.stopPropagation();
-            onToggle(row.folder);
+            onToggle(row.folder, event);
           }}
           className={`flex h-4 w-4 items-center justify-center rounded border transition-opacity ${
             isSelected
