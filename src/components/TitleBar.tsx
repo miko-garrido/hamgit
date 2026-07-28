@@ -1,11 +1,14 @@
-import { FolderPlus, RefreshCcw } from "lucide-react";
+import { ArrowUpDown, FolderPlus, RefreshCcw } from "lucide-react";
 import { IconButton } from "./IconButton";
 
 type Props = {
   onAdd: () => void;
   onRefreshAll: () => void;
+  onSyncAll: () => void;
   refreshDisabled?: boolean;
   refreshing?: boolean;
+  syncDisabled?: boolean;
+  syncing?: boolean;
 };
 
 /**
@@ -20,7 +23,15 @@ type Props = {
  * covers most of the bar's width, so it must carry the attribute itself or
  * clicks/drags on that area would be swallowed silently.
  */
-export function TitleBar({ onAdd, onRefreshAll, refreshDisabled, refreshing }: Props) {
+export function TitleBar({
+  onAdd,
+  onRefreshAll,
+  onSyncAll,
+  refreshDisabled,
+  refreshing,
+  syncDisabled,
+  syncing,
+}: Props) {
   return (
     <div
       data-tauri-drag-region
@@ -35,6 +46,13 @@ export function TitleBar({ onAdd, onRefreshAll, refreshDisabled, refreshing }: P
           onClick={onRefreshAll}
           disabled={refreshDisabled}
           processing={refreshing}
+        />
+        <IconButton
+          icon={ArrowUpDown}
+          label="Sync all"
+          onClick={onSyncAll}
+          disabled={syncDisabled}
+          processing={syncing}
         />
       </div>
     </div>

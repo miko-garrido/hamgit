@@ -14,9 +14,10 @@ import { Dialog } from "./components/Dialog";
 import { BranchPalette } from "./components/BranchPalette";
 import { afterPaint } from "./lib/afterPaint";
 import { errorSummary, formatList } from "./lib/format";
+import { contextMenuTargets } from "./lib/selection";
 import type { RepoRow, BulkActionResult } from "./types";
 
-type MenuState = { folder: string; x: number; y: number } | null;
+type MenuState = { folder: string; targetFolders: string[]; x: number; y: number } | null;
 type PaletteState = { folder: string } | null;
 
 /** Bulk verbs share pull/push/sync semantics; refresh and remove are handled separately. */
@@ -37,7 +38,7 @@ export function App() {
     sortDirection,
     toggleSort,
   } = useRepos();
-  const { selected, isSelected, toggle, clear, handleRowClick, setSelected } = useSelection();
+  const { selected, isSelected, toggleAll, clear, handleSelectionClick, setSelected } = useSelection();
   const { dialog, show, dismiss } = useDialogs();
   useAppUpdater(show, dismiss);
 
@@ -45,17 +46,27 @@ export function App() {
   const [palette, setPalette] = useState<PaletteState>(null);
   const [runningBarAction, setRunningBarAction] = useState<SelectionBarAction | null>(null);
   const [runningMenuAction, setRunningMenuAction] = useState<ContextMenuAction | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
 
   const isRefreshing = rows.some((row) => row.refreshing);
   const hasRepos = rows.length > 0;
 
   function onRowClick(folder: string, order: string[], event: React.MouseEvent) {
-    handleRowClick(folder, order, { metaKey: event.metaKey, shiftKey: event.shiftKey });
+    handleSelectionClick(folder, order, event, "row");
+  }
+
+  function onToggle(folder: string, order: string[], event: React.MouseEvent) {
+    handleSelectionClick(folder, order, event, "checkbox");
   }
 
   function onContextMenu(folder: string, event: React.MouseEvent) {
     event.preventDefault();
-    setMenu({ folder, x: event.clientX, y: event.clientY });
+    setMenu({
+      folder,
+      targetFolders: contextMenuTargets(folder, selected),
+      x: event.clientX,
+      y: event.clientY,
+    });
   }
 
   function rowsFor(folders: string[]): RepoRow[] {
@@ -151,7 +162,7 @@ export function App() {
   async function runBulk(
     verb: BulkVerb,
     targetRows: RepoRow[],
-    opts: { fromSelectionBar: boolean; silentOnFullSuccess?: boolean },
+    opts: { showFullSuccess: boolean; successScope?: "selected" | "tracked" },
   ) {
     const runner = verb === "pull" ? pullRows : verb === "push" ? pushRows : syncRows;
     const result = await runner(targetRows);
@@ -168,7 +179,7 @@ export function App() {
   function presentBulkResult(
     verb: BulkVerb,
     result: BulkActionResult,
-    opts: { fromSelectionBar: boolean; silentOnFullSuccess?: boolean },
+    opts: { showFullSuccess: boolean; successScope?: "selected" | "tracked" },
   ) {
     const { succeeded, failed, skipped } = result;
     const total = succeeded.length + failed.length + skipped.length;
@@ -220,11 +231,12 @@ export function App() {
       return;
     }
 
-    if (opts.fromSelectionBar && !opts.silentOnFullSuccess) {
+    if (opts.showFullSuccess) {
+      const scope = opts.successScope ?? "selected";
       show({
         variant: "message",
         title: `${verbPastTense(verb)} ${succeeded.length} repo${succeeded.length === 1 ? "" : "s"}`,
-        body: `All ${succeeded.length} selected repo${succeeded.length === 1 ? "" : "s"} ${succeeded.length === 1 ? "is" : "are"} now up to date.`,
+        body: `All ${succeeded.length} ${scope} repo${succeeded.length === 1 ? "" : "s"} ${succeeded.length === 1 ? "is" : "are"} now up to date.`,
         confirmLabel: "OK",
         onConfirm: dismiss,
         onCancel: dismiss,
@@ -236,10 +248,15 @@ export function App() {
   async function handleMenuAction(action: ContextMenuAction) {
     if (!menu || runningMenuAction !== null) return;
     const folder = menu.folder;
-    const targetRows = rowsFor([folder]);
+    const targetFolders = menu.targetFolders;
+    const targetRows = rowsFor(targetFolders);
+    const clickedRow = rowsFor([folder])[0];
     // A row already running an action must not start a second one — a push
     // overwriting a mid-flight sync would break its pull-then-push atomicity.
-    if (targetRows.some((row) => row.acting) && action !== "reveal") return;
+    // Single-repo actions only care about the clicked row; another selected
+    // row being busy must not block branch switching on this one.
+    const guardedRows = action === "switch-branch" ? (clickedRow ? [clickedRow] : []) : targetRows;
+    if (guardedRows.some((row) => row.acting) && action !== "reveal") return;
 
     // Instant UI actions: close the menu, then open palette / dialog / Finder.
     if (action === "switch-branch") {
@@ -249,7 +266,7 @@ export function App() {
     }
     if (action === "remove") {
       setMenu(null);
-      confirmRemove([folder]);
+      confirmRemove(targetFolders);
       return;
     }
     if (action === "reveal") {
@@ -264,9 +281,12 @@ export function App() {
     await afterPaint();
     try {
       if (action === "refresh") {
-        await refreshFolders([folder]);
+        await refreshFolders(targetFolders);
       } else {
-        await runBulk(action, targetRows, { fromSelectionBar: false });
+        await runBulk(action, targetRows, {
+          showFullSuccess: targetRows.length > 1,
+          successScope: "selected",
+        });
       }
     } finally {
       setRunningMenuAction(null);
@@ -301,9 +321,20 @@ export function App() {
     setRunningBarAction(action);
     await afterPaint();
     try {
-      await runBulk(action, targetRows, { fromSelectionBar: true });
+      await runBulk(action, targetRows, { showFullSuccess: true, successScope: "selected" });
     } finally {
       setRunningBarAction(null);
+    }
+  }
+
+  async function handleSyncAll() {
+    if (syncingAll || rows.length === 0) return;
+    setSyncingAll(true);
+    await afterPaint();
+    try {
+      await runBulk("sync", rows, { showFullSuccess: true, successScope: "tracked" });
+    } finally {
+      setSyncingAll(false);
     }
   }
 
@@ -312,8 +343,13 @@ export function App() {
       <TitleBar
         onAdd={addRepositories}
         onRefreshAll={() => refreshFolders(rows.map((row) => row.folder))}
-        refreshDisabled={!hasRepos}
+        onSyncAll={() => {
+          void handleSyncAll();
+        }}
+        refreshDisabled={!hasRepos || syncingAll}
         refreshing={isRefreshing}
+        syncDisabled={!hasRepos || isRefreshing}
+        syncing={syncingAll}
       />
 
       <section className="min-h-0 flex-1">
@@ -321,7 +357,8 @@ export function App() {
           <RepoTable
             rows={rows}
             isSelected={isSelected}
-            onToggle={toggle}
+            onToggleAll={toggleAll}
+            onToggle={onToggle}
             onRowClick={onRowClick}
             onContextMenu={onContextMenu}
             sortColumn={sortColumn}

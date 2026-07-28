@@ -1,4 +1,10 @@
 import { useCallback, useRef, useState } from "react";
+import {
+  extendSelectionRange,
+  toggleAllSelection,
+  toggleSelection,
+  type SelectionModifiers,
+} from "../lib/selection";
 
 /**
  * Tracks selected row keys (folder paths) plus the anchor used for
@@ -19,44 +25,32 @@ export function useSelection() {
 
   /** Checkbox click: plain toggle, and becomes the new anchor. */
   const toggle = useCallback((key: string) => {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    setSelected((current) => toggleSelection(current, key));
     anchorRef.current = key;
   }, []);
 
+  const toggleAll = useCallback((order: string[]) => {
+    setSelected((current) => toggleAllSelection(current, order));
+    anchorRef.current = null;
+  }, []);
+
   /**
-   * Row click with modifier keys:
-   * - metaKey (⌘): toggle this row, becomes new anchor.
+   * Selection click with modifier keys:
    * - shiftKey: extend selection from anchor to this row (inclusive) using
    *   the provided visual order.
-   * - plain click: no-op here (rows aren't clickable without a modifier
-   *   per DESIGN.md — only the checkbox and modifiers select).
+   * - metaKey (⌘): toggle this row, becomes new anchor.
+   * - a plain checkbox click toggles; a plain row click is a no-op.
    */
-  const handleRowClick = useCallback(
-    (key: string, order: string[], event: { metaKey: boolean; shiftKey: boolean }) => {
-      if (event.metaKey) {
-        toggle(key);
+  const handleSelectionClick = useCallback(
+    (key: string, order: string[], event: SelectionModifiers, source: "row" | "checkbox") => {
+      if (event.shiftKey) {
+        setSelected((current) => extendSelectionRange(current, anchorRef.current, key, order));
+        if (!anchorRef.current || !order.includes(anchorRef.current)) anchorRef.current = key;
         return;
       }
-      if (event.shiftKey && anchorRef.current) {
-        const anchor = anchorRef.current;
-        const anchorIndex = order.indexOf(anchor);
-        const targetIndex = order.indexOf(key);
-        if (anchorIndex === -1 || targetIndex === -1) {
-          toggle(key);
-          return;
-        }
-        const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
-        const range = order.slice(start, end + 1);
-        setSelected((current) => {
-          const next = new Set(current);
-          range.forEach((rangeKey) => next.add(rangeKey));
-          return next;
-        });
+
+      if (event.metaKey || source === "checkbox") {
+        toggle(key);
       }
     },
     [toggle],
@@ -66,8 +60,9 @@ export function useSelection() {
     selected,
     isSelected,
     toggle,
+    toggleAll,
     clear,
-    handleRowClick,
+    handleSelectionClick,
     setSelected,
   };
 }

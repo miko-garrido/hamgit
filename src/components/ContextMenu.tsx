@@ -39,8 +39,8 @@ const PRESENT_TENSE: Partial<Record<ContextMenuAction, string>> = {
 
 /**
  * Custom right-click menu per DESIGN.md "Context menu": 208px, white surface,
- * 8px radius, floating shadow, 4px padding. Always operates on a single repo
- * (the caller resolves which folder before opening this).
+ * 8px radius, floating shadow, 4px padding. The caller resolves whether the
+ * menu targets its row alone or the current multi-selection.
  *
  * While an action runs (Paper processing state): its icon becomes the spinner,
  * label goes present-tense ("Pulling…"), and sibling items dim to 40%.

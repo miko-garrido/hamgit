@@ -10,7 +10,7 @@ status, and remote ahead/behind state, with pull / push / sync / switch-branch a
 ## Principles
 
 1. **The table is the app.** One screen, no navigation. Every repo is a row; everything you can do, you do to rows.
-2. **No toolbar.** Actions live in exactly three places: the title bar for global actions (add folders, refresh all), the right-click context menu for single-repo actions, and the floating selection bar for bulk actions.
+2. **No toolbar.** Actions live in exactly three places: the title bar for global actions (add folders, refresh all), the right-click context menu for its row or current selection, and the floating selection bar for bulk actions.
 3. **Branch switching is single-repo.** The branch palette works on one repo at a time. There is deliberately no bulk branch change.
 4. **Read-mostly safety.** Hamgit reads constantly, writes only on request. Bulk actions skip unsafe repos (dirty, conflict, detached) instead of failing, and report partial success ("Pulled 5 of 7"). Remove only untracks a folder — nothing on disk is ever touched.
 5. **Destructive means rose.** Dusty rose is reserved for destructive/failed things. Every destructive action gets a confirm dialog whose button restates the consequence ("Remove 2 folders"), never "Yes".
@@ -82,8 +82,8 @@ Dialogs and palette: `0 24px 64px rgba(15,23,42,0.2), 0 4px 12px rgba(15,23,42,0
 ## Layout — main window (`design/app-main.png`)
 
 - Window: 1180×760 default, min 860×520. `titleBarStyle: Overlay`, `hiddenTitle: true`, `trafficLightPosition {x:12,y:20}` (already configured in tauri.conf.json).
-- **Title bar**: 52px tall, `data-tauri-drag-region`. Left: native traffic lights occupy the space (12px lights, 8px gaps, 20px inset — leave ~80px clear). Right: two icon buttons — folder-plus (add folders) and refresh (refresh all).
-- **Table**: 16px horizontal padding from window edges. Column header row 32px: 13px medium slate-500, regular case ("Folder", "Repo ↑", "Branch", "Status", "Remote"), no background, no border. Sort indicator "↑" on the sorted column (default: Repo ascending). Hidden select-all checkbox slot (36px) keeps alignment.
+- **Title bar**: 52px tall, `data-tauri-drag-region`. Left: native traffic lights occupy the space (12px lights, 8px gaps, 20px inset — leave ~80px clear). Right: three icon buttons — folder-plus (add folders), refresh (refresh all), and arrow-up-down (sync all).
+- **Table**: 16px horizontal padding from window edges. Column header row 32px: 13px medium slate-500, regular case ("Folder", "Repo ↑", "Branch", "Status", "Remote"), no background, no border. Sort indicator "↑" on the sorted column (default: Repo ascending). The 36px checkbox slot contains a select-all checkbox; it shows a minus for a partial selection.
 - **Columns**: checkbox 36px fixed · Folder ~340px · Repo ~160px · Branch ~140px · Status ~120px · Remote flex. Fixed-width lanes, `flex-shrink: 0`, truncation with ellipsis. Columns are user-resizable (see Column resize).
 - **Scrolling**: header and rows share a single scroll container (both axes) so they never desync — the header is `position: sticky; top: 0` inside that container, pinned vertically while scrolling horizontally with the columns. When the window is narrower than the columns' combined width, the table scrolls horizontally instead of truncating; Remote has a ~160px floor so it never collapses below its longest resting value ("Up to date" / "↑ 1, ↓ 4").
 - **Rows**: 44px tall, no borders, no zebra. Folder in mono 12px with `~` substituted for the home dir (tooltip shows full path). Repo 14px medium. Branch mono 12px ("Detached" when detached, "-" when unknown). Status: 18px filled icon only (see Status icons). Remote: 12px, arrow notation — "Up to date", "↑ 2", "↓ 3", "↑ 1, ↓ 4", "No upstream", "Unknown".
@@ -103,7 +103,7 @@ Dialogs and palette: `0 24px 64px rgba(15,23,42,0.2), 0 4px 12px rgba(15,23,42,0
 
 - **Hover**: fill `row-hover`, 6px radius. Reveals the row checkbox (otherwise invisible; the 36px slot is always reserved).
 - **Selected**: fill `row-selected`, checked checkbox (slate-900 rounded square, white check). Adjacent selected rows merge: outer corners of the run get 6px radius, inner shared edges are square, no gap. Different states never merge (hover pill stays separate from a touching selection).
-- **Selection mechanics**: click checkbox toggles; ⌘-click row toggles; shift-click extends range. Selecting 1+ rows shows the selection bar.
+- **Selection mechanics**: click checkbox toggles; ⌘-click row toggles; shift-click a row or checkbox extends the range from the last selection anchor. Selecting 1+ rows shows the selection bar.
 - **Cell tooltips** (0.3s): folder → full unredacted path (mono); repo → `owner/repo` parsed from the origin URL; branch → full branch name only when truncated; status → name + meaning; remote → "Ahead 1, behind 4" in words. Remote cell is NOT clickable. Tooltips center horizontally on the pointer's x-position (clamped to the viewport, frozen once shown so they don't chase the cursor); keyboard focus (no pointer) falls back to anchor-centered.
 - **In-flight**: any pull/push/sync replaces the remote cell with spinner + "Pulling…" / "Pushing…" / "Syncing…". Branch switch replaces the branch cell with spinner + "Switching to <branch>…". Resolves on the post-action refresh; errors surface via the error dialog and the status icon.
 
@@ -111,6 +111,10 @@ Dialogs and palette: `0 24px 64px rgba(15,23,42,0.2), 0 4px 12px rgba(15,23,42,0
 
 White surface, 1px border, 8px radius, floating shadow, 4px padding, 208px wide. Items 32px tall,
 5px radius, 13px text, 15px leading icon, slate-100 hover fill. Order:
+
+If the clicked row is selected, Refresh, Pull, Push, Sync, and Remove folder apply to the entire
+selection. If the clicked row is not selected, they apply only to that row. Switch branch and
+Reveal in Finder always apply only to the clicked row.
 
 1. Refresh (refresh icon)
 2. Pull (arrow-down)
