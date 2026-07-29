@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/miko-garrido/hamgit/compare/v0.2.0...v0.2.1) (2026-07-29)
+
+
+### Performance Improvements
+
+* increase repository concurrency safely ([#15](https://github.com/miko-garrido/hamgit/issues/15)) ([21f809b](https://github.com/miko-garrido/hamgit/commit/21f809bdc1c1602cbe0f21132044b112d29b7274))
+
 ## [0.2.0](https://github.com/miko-garrido/hamgit/compare/v0.1.4...v0.2.0) (2026-07-28)
 
 
