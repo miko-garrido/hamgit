@@ -110,17 +110,17 @@ export function RepoTable({
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto">
         <div className="relative px-4" style={{ minWidth: contentMinWidth }}>
           <div className="sticky top-0 z-20 flex h-8 shrink-0 items-center bg-background text-sm font-medium text-slate-500">
-            <div className="flex w-9 shrink-0 items-center justify-center">
+            <div className="group/select-all flex w-9 shrink-0 items-center justify-center">
               <button
                 type="button"
                 role="checkbox"
                 aria-label={allSelected ? "Deselect all rows" : "Select all rows"}
                 aria-checked={partiallySelected ? "mixed" : allSelected}
                 onClick={() => onToggleAll(order)}
-                className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+                className={`flex h-4 w-4 items-center justify-center rounded border transition-[border-color,background-color,color,opacity] focus-visible:opacity-100 ${
                   allSelected || partiallySelected
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-400 bg-white hover:border-slate-600"
+                    ? "border-slate-900 bg-slate-900 text-white opacity-100"
+                    : "border-slate-400 bg-white opacity-0 hover:border-slate-600 group-hover/select-all:opacity-100"
                 }`}
               >
                 {allSelected ? (
