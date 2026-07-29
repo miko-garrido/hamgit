@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { afterPaint } from "../lib/afterPaint";
+import {
+  ACTION_CONCURRENCY,
+  KeyedSerialQueue,
+  REFRESH_CONCURRENCY,
+  runLimited,
+} from "../lib/concurrency";
 import { invoke, pickDirectories } from "../lib/invoke";
 import { folderName } from "../lib/format";
 import type {
@@ -12,8 +18,6 @@ import type {
 } from "../types";
 
 const STORAGE_KEY = "hamgit.repositories";
-const REFRESH_CONCURRENCY = 6;
-const ACTION_CONCURRENCY = 3;
 const AUTO_REFRESH_MS = 30_000;
 
 function loadFolders(): string[] {
@@ -58,27 +62,13 @@ function skipReason(row: RepoRow): string {
   return "not eligible";
 }
 
-async function runLimited<T>(
-  items: T[],
-  limit: number,
-  worker: (item: T, index: number) => Promise<void>,
-) {
-  let index = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (index < items.length) {
-      const next = index;
-      index += 1;
-      await worker(items[next], next);
-    }
-  });
-  await Promise.all(workers);
-}
-
 type LoadOptions = {
   /** When false, skip marking rows refreshing / afterPaint (continuation pass). */
   paint?: boolean;
   /** When false, leave refreshing true after each row finishes (multi-pass load). */
   clearRefreshing?: boolean;
+  /** Internal: false only when the caller already owns this folder's queue. */
+  serialize?: boolean;
 };
 
 export function useRepos() {
@@ -88,6 +78,7 @@ export function useRepos() {
   const [sortColumn, setSortColumn] = useState<SortColumn>("repo");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const refreshInFlight = useRef(false);
+  const repositoryOperations = useRef(new KeyedSerialQueue<string>());
   const rowsRef = useRef(rows);
   useEffect(() => {
     rowsRef.current = rows;
@@ -111,8 +102,9 @@ export function useRepos() {
       command: "refresh_repository" | "inspect_repository",
       options: LoadOptions = {},
     ) => {
-      if (folders.length === 0) return;
-      const { paint = true, clearRefreshing = true } = options;
+      const failures = new Map<string, string>();
+      if (folders.length === 0) return failures;
+      const { paint = true, clearRefreshing = true, serialize = true } = options;
 
       if (paint) {
         folders.forEach((folder) => updateRow(folder, { refreshing: true }));
@@ -120,34 +112,47 @@ export function useRepos() {
       }
 
       await runLimited(folders, REFRESH_CONCURRENCY, async (folder) => {
-        try {
-          const state = await invoke<RepositoryState>(command, { folder });
-          setRows((current) =>
-            current.map((row) =>
-              row.folder === folder
-                ? {
-                    ...row,
-                    ...state,
-                    loaded: true,
-                    refreshing: clearRefreshing ? false : true,
-                    // Keep the in-flight label (e.g. "Switching to…") while acting;
-                    // otherwise surface the inspect error as a row note.
-                    note: row.acting ? row.note : state.error,
-                  }
-                : row,
-            ),
-          );
-        } catch (error) {
-          updateRow(folder, {
-            loaded: true,
-            refreshing: clearRefreshing ? false : true,
-            status: "Error",
-            remote: "unknown",
-            error: String(error),
-            note: String(error),
-          });
+        const load = async () => {
+          try {
+            const state = await invoke<RepositoryState>(command, { folder });
+            if (state.error) {
+              failures.set(folder, state.error);
+            }
+            setRows((current) =>
+              current.map((row) =>
+                row.folder === folder
+                  ? {
+                      ...row,
+                      ...state,
+                      loaded: true,
+                      refreshing: clearRefreshing ? false : true,
+                      // Keep the in-flight label (e.g. "Switching to…") while acting;
+                      // an inspect error always wins over an action success note.
+                      note: state.error ?? (row.acting ? row.note : null),
+                    }
+                  : row,
+              ),
+            );
+          } catch (error) {
+            failures.set(folder, String(error));
+            updateRow(folder, {
+              loaded: true,
+              refreshing: clearRefreshing ? false : true,
+              status: "Error",
+              remote: "unknown",
+              error: String(error),
+              note: String(error),
+            });
+          }
+        };
+
+        if (serialize) {
+          await repositoryOperations.current.run(folder, load);
+        } else {
+          await load();
         }
       });
+      return failures;
     },
     [updateRow],
   );
@@ -155,12 +160,6 @@ export function useRepos() {
   /** Manual / timed refresh: best-effort fetch then inspect. */
   const refreshFolders = useCallback(
     async (folders: string[]) => loadFoldersState(folders, "refresh_repository"),
-    [loadFoldersState],
-  );
-
-  /** Post-action refresh: local inspect only (refs already updated by the action). */
-  const inspectFolders = useCallback(
-    async (folders: string[]) => loadFoldersState(folders, "inspect_repository"),
     [loadFoldersState],
   );
 
@@ -235,25 +234,27 @@ export function useRepos() {
       await afterPaint();
 
       await runLimited(allowed, ACTION_CONCURRENCY, async (row) => {
-        updateRow(row.folder, { actingVerb: verb });
-        await afterPaint();
-        // Keep acting true through the post-action inspect so the remote cell
-        // shows "Pulling…" / "Pushing…" / "Syncing…" until refresh lands
-        // (DESIGN.md + Paper "Remote updating").
-        try {
-          await run(row);
-          succeeded.push(row.folder);
-        } catch (error) {
-          failed.push({ folder: row.folder, repo: row.repo, message: String(error) });
-        } finally {
-          await inspectFolders([row.folder]);
-          updateRow(row.folder, { acting: false, actingVerb: null });
-        }
+        await repositoryOperations.current.run(row.folder, async () => {
+          updateRow(row.folder, { actingVerb: verb });
+          await afterPaint();
+          // Keep acting true through the post-action inspect so the remote cell
+          // shows "Pulling…" / "Pushing…" / "Syncing…" until refresh lands
+          // (DESIGN.md + Paper "Remote updating").
+          try {
+            await run(row);
+            succeeded.push(row.folder);
+          } catch (error) {
+            failed.push({ folder: row.folder, repo: row.repo, message: String(error) });
+          } finally {
+            await loadFoldersState([row.folder], "inspect_repository", { serialize: false });
+            updateRow(row.folder, { acting: false, actingVerb: null });
+          }
+        });
       });
 
       return { succeeded, failed, skipped };
     },
-    [updateRow, inspectFolders],
+    [updateRow, loadFoldersState],
   );
 
   const pullRows = useCallback(
@@ -303,18 +304,26 @@ export function useRepos() {
       // lands (Paper "Branch selected — row shows switching state").
       updateRow(folder, { acting: true, actingVerb: "switch", note: `Switching to ${branch}…` });
       await afterPaint();
-      try {
-        const result = await invoke<ActionResult>("switch_repository", { folder, branch });
-        await inspectFolders([folder]);
-        updateRow(folder, { acting: false, actingVerb: null, note: result.message });
-        return result;
-      } catch (error) {
-        const message = String(error);
-        updateRow(folder, { acting: false, actingVerb: null, note: message });
-        return { ok: false, message };
-      }
+      return repositoryOperations.current.run(folder, async () => {
+        try {
+          const result = await invoke<ActionResult>("switch_repository", { folder, branch });
+          const inspectFailures = await loadFoldersState([folder], "inspect_repository", {
+            serialize: false,
+          });
+          updateRow(folder, {
+            acting: false,
+            actingVerb: null,
+            note: inspectFailures.get(folder) ?? result.message,
+          });
+          return result;
+        } catch (error) {
+          const message = String(error);
+          updateRow(folder, { acting: false, actingVerb: null, note: message });
+          return { ok: false, message };
+        }
+      });
     },
-    [updateRow, inspectFolders],
+    [updateRow, loadFoldersState],
   );
 
   const revealInFinder = useCallback(async (folder: string) => {

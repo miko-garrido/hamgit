@@ -83,7 +83,7 @@ Dialogs and palette: `0 24px 64px rgba(15,23,42,0.2), 0 4px 12px rgba(15,23,42,0
 
 - Window: 1180×760 default, min 860×520. `titleBarStyle: Overlay`, `hiddenTitle: true`, `trafficLightPosition {x:12,y:20}` (already configured in tauri.conf.json).
 - **Title bar**: 52px tall, `data-tauri-drag-region`. Left: native traffic lights occupy the space (12px lights, 8px gaps, 20px inset — leave ~80px clear). Right: three icon buttons — folder-plus (add folders), refresh (refresh all), and arrow-up-down (sync all).
-- **Table**: 16px horizontal padding from window edges. Column header row 32px: 13px medium slate-500, regular case ("Folder", "Repo ↑", "Branch", "Status", "Remote"), no background, no border. Sort indicator "↑" on the sorted column (default: Repo ascending). The 36px checkbox slot contains a select-all checkbox; it shows a minus for a partial selection.
+- **Table**: 16px horizontal padding from window edges. Column header row 32px: 13px medium slate-500, regular case ("Folder", "Repo ↑", "Branch", "Status", "Remote"), no background, no border. Sort indicator "↑" on the sorted column (default: Repo ascending). The 36px checkbox slot contains a select-all checkbox; it is hidden until that lane is hovered or keyboard-focused, stays visible while any rows are selected, and shows a minus for a partial selection.
 - **Columns**: checkbox 36px fixed · Folder ~340px · Repo ~160px · Branch ~140px · Status ~120px · Remote flex. Fixed-width lanes, `flex-shrink: 0`, truncation with ellipsis. Columns are user-resizable (see Column resize).
 - **Scrolling**: header and rows share a single scroll container (both axes) so they never desync — the header is `position: sticky; top: 0` inside that container, pinned vertically while scrolling horizontally with the columns. When the window is narrower than the columns' combined width, the table scrolls horizontally instead of truncating; Remote has a ~160px floor so it never collapses below its longest resting value ("Up to date" / "↑ 1, ↓ 4").
 - **Rows**: 44px tall, no borders, no zebra. Folder in mono 12px with `~` substituted for the home dir (tooltip shows full path). Repo 14px medium. Branch mono 12px ("Detached" when detached, "-" when unknown). Status: 18px filled icon only (see Status icons). Remote: 12px, arrow notation — "Up to date", "↑ 2", "↓ 3", "↑ 1, ↓ 4", "No upstream", "Unknown".
@@ -196,7 +196,8 @@ in localStorage alongside the repo list.
   Refresh (manual + 30s) best-effort fetches remote refs (`git fetch --prune`)
   before re-inspecting so ahead/behind stay current; fetch failures stay silent
   (offline/auth still show local state). Post-action refreshes inspect only.
-- Refresh concurrency 6; action concurrency 3 (as in the current code).
+- Refresh concurrency 12; action concurrency 6. Operations remain serialized
+  per repository so refresh and mutation commands never overlap on one working tree.
 - Bulk pull/sync eligibility: skip dirty/conflict/detached/error repos, report partial success.
 - Sync = pull (ff-only) then push; a pull failure aborts the push and reports the error.
 - Sort: Repo ascending by default; clicking a column header sorts by it (toggle asc/desc, ↑/↓ indicator).
