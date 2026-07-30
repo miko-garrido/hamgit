@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/miko-garrido/hamgit/compare/v0.2.1...v0.3.0) (2026-07-30)
+
+
+### Features
+
+* sync html.dark and window theme to macOS Appearance ([47d64a3](https://github.com/miko-garrido/hamgit/commit/47d64a3d62cb99f3d284a26359a0a979f152fb21))
+* system dark mode via macOS Appearance ([5121fef](https://github.com/miko-garrido/hamgit/commit/5121fef14c9bb7dbf9d3f95e47fa888a58dc5d9a))
+* theme-safe ink surfaces and dark design tokens docs ([fb17723](https://github.com/miko-garrido/hamgit/commit/fb177230de40f71228968790556cb607c14f1bf9))
+* wire theme tokens to CSS vars with dark remaps ([d1eedfb](https://github.com/miko-garrido/hamgit/commit/d1eedfb2da0ffced60144577e37485ce0504ce00))
+
+
+### Bug Fixes
+
+* address dark-mode review blockers ([de0c252](https://github.com/miko-garrido/hamgit/commit/de0c252271e50fd867794013047994175fd9edd5))
+
 ## [0.2.1](https://github.com/miko-garrido/hamgit/compare/v0.2.0...v0.2.1) (2026-07-29)
 
 
