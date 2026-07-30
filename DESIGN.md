@@ -79,9 +79,9 @@ status icons (not primary ink surfaces), shadow/scrim rgba via CSS vars (`--scri
 | `status-dirty` | `#E0B575` | apricot — dirty status icon fill |
 | `status-alert` | `#D49292` | rose — conflict AND error icon fill |
 | `status-detached` | `#A8B3C2` | slate — detached icon fill |
-| `emerald-50/200/800` | `#1A2A22` / `#2A4A38` / `#8BBB9F` | success/message accents |
-| `amber-50/200/900` | `#2A2418` / `#4A3A20` / `#E0B575` | warning accents |
-| `red-50/200/700/800` | `#2A1C1C` / `#4A2A2A` / `#D49292` / `#C08080` | destructive/error (dusty rose) |
+| `emerald-50/200/800` | `#1A2820` / `#2A3F32` / `#8BB89A` | success/message accents |
+| `amber-50/200/900` | `#2A2418` / `#3F3520` / `#D4B87A` | warning accents |
+| `red-50/200/700/800` | `#2A1E1E` / `#3F2A2A` / `#D4A0A0` / `#C99090` | destructive/error (dusty rose) |
 
 The slate ladder is **relative** (50 near background, 900 strongest control tone). Primary ink surfaces (buttons, checked checkboxes, tooltips) use `foreground` / `background` pairing so they invert correctly in dark mode.
 

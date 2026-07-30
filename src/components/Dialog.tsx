@@ -76,7 +76,7 @@ export function Dialog({ spec, onDismiss }: { spec: DialogSpec; onDismiss: () =>
 
   const confirmButtonClass =
     spec.variant === "destructive"
-      ? "bg-red-700 text-white hover:bg-red-800"
+      ? "bg-red-700 text-background hover:bg-red-800"
       : "bg-foreground text-background hover:opacity-90";
 
   return (
