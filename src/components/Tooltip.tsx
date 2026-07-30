@@ -143,7 +143,7 @@ export function Tooltip({ label, mono, placement = "bottom", disabled, children 
           <div
             ref={tooltipRef}
             role="tooltip"
-            className={`pointer-events-none fixed z-[100] rounded-md bg-slate-800 px-2 py-1 text-xs text-white ${mono ? "font-mono" : ""}`}
+            className={`pointer-events-none fixed z-[100] rounded-md bg-foreground px-2 py-1 text-xs text-background ${mono ? "font-mono" : ""}`}
             style={{
               left: coords?.left ?? -9999,
               top: coords?.top ?? -9999,

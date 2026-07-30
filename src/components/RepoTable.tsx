@@ -119,7 +119,7 @@ export function RepoTable({
                 onClick={() => onToggleAll(order)}
                 className={`flex h-4 w-4 items-center justify-center rounded border transition-[border-color,background-color,color,opacity] focus-visible:opacity-100 ${
                   allSelected || partiallySelected
-                    ? "border-slate-900 bg-slate-900 text-white opacity-100"
+                    ? "border-foreground bg-foreground text-background opacity-100"
                     : "border-slate-400 bg-white opacity-0 hover:border-slate-600 group-hover/select-all:opacity-100"
                 }`}
               >

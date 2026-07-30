@@ -18,7 +18,7 @@ status, and remote ahead/behind state, with pull / push / sync / switch-branch a
 7. **Color is meaning.** Sage = clean/success, apricot = dirty/caution, rose = conflict/error/destructive, slate = detached/neutral. One hue never carries two meanings.
 8. **Progress happens in place.** In-flight work replaces the thing it affects (icon → spinner, remote cell → "Pulling…", branch cell → "Switching to…"). No global progress bars or blocking overlays. Auto-refresh is hardcoded at 30 seconds and never blocks interaction.
 9. **Tooltips are labels.** 0.3s delay, dark pill, label only, no shortcuts. Below the element by default; above in the bottom selection bar.
-10. **Native macOS, not themed.** Overlay title bar with real traffic-light metrics, system col-resize cursors, mono for paths/branches.
+10. **Native macOS chrome.** Overlay title bar with real traffic-light metrics, system col-resize cursors, mono for paths/branches. App surfaces follow macOS Appearance (light/dark via `prefers-color-scheme`); there is no in-app theme toggle.
 
 ## Design tokens
 
@@ -52,7 +52,38 @@ Implement as CSS custom properties + Tailwind theme extension. See `design/desig
 | `red-50/200/700/800` | `#F9F1F1` / `#EBD5D5` / `#9C5F5F` / `#8F5454` | destructive/error (dusty rose) |
 
 Allowed hardcoded values: macOS traffic-light colors, white glyph strokes inside filled
-status icons and on dark buttons/tooltips, rgba() shadow/scrim values.
+status icons (not primary ink surfaces), shadow/scrim rgba via CSS vars (`--scrim`).
+
+**Theme:** Hamgit follows macOS Appearance only (`prefers-color-scheme`); there is no in-app toggle.
+
+#### Dark mode (`prefers-color-scheme: dark`)
+
+| Token | Value | Use |
+|---|---|---|
+| `background` | `#12151A` | app background |
+| `surface` | `#1A1E26` | cards, popovers, menus, bars, dialogs |
+| `foreground` | `#F1F5F9` | primary text, ink surfaces |
+| `border` | `#2A313C` | hairlines on surfaces, input borders |
+| `slate-50` | `#161A21` | code-strip background |
+| `slate-100` | `#1E2430` | icon-button/menu-item hover fill |
+| `slate-200` | `#2A313C` | pressed fill |
+| `slate-400` | `#7B8799` | placeholder, faint icons |
+| `slate-500` | `#94A3B8` | secondary text |
+| `slate-600` | `#A8B4C4` | icon default |
+| `slate-700` | `#C5CDD8` | secondary button text |
+| `slate-800` | `#E2E8F0` | (relative ladder) |
+| `slate-900` | `#F8FAFC` | strongest control tone |
+| `row-hover` | `#1E2430` | row hover fill |
+| `row-selected` | `#252D3A` | row selected fill |
+| `status-clean` | `#8BBB9F` | sage — clean status icon fill |
+| `status-dirty` | `#E0B575` | apricot — dirty status icon fill |
+| `status-alert` | `#D49292` | rose — conflict AND error icon fill |
+| `status-detached` | `#A8B3C2` | slate — detached icon fill |
+| `emerald-50/200/800` | `#1A2A22` / `#2A4A38` / `#8BBB9F` | success/message accents |
+| `amber-50/200/900` | `#2A2418` / `#4A3A20` / `#E0B575` | warning accents |
+| `red-50/200/700/800` | `#2A1C1C` / `#4A2A2A` / `#D49292` / `#C08080` | destructive/error (dusty rose) |
+
+The slate ladder is **relative** (50 near background, 900 strongest control tone). Primary ink surfaces (buttons, checked checkboxes, tooltips) use `foreground` / `background` pairing so they invert correctly in dark mode.
 
 ### Typography
 
