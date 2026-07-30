@@ -65,11 +65,11 @@ export function RepoRow({
           }}
           className={`flex h-4 w-4 items-center justify-center rounded border transition-opacity ${
             isSelected
-              ? "border-slate-900 bg-slate-900 opacity-100"
+              ? "border-foreground bg-foreground opacity-100"
               : "border-slate-400 bg-white opacity-0 group-hover:opacity-100"
           }`}
         >
-          {isSelected && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+          {isSelected && <Check className="h-3 w-3 text-background" strokeWidth={3} />}
         </button>
       </div>
 

@@ -3,6 +3,30 @@ import { useEffect, useRef } from "react";
 /** Soft glyphs for a light background — denser = brighter wave crest. */
 const CHARS = " .·:oO*";
 
+function hexToRgb(hex: string): [number, number, number] | null {
+  const normalized = hex.trim().replace(/^#/, "");
+  if (normalized.length === 3) {
+    const r = parseInt(normalized[0] + normalized[0], 16);
+    const g = parseInt(normalized[1] + normalized[1], 16);
+    const b = parseInt(normalized[2] + normalized[2], 16);
+    return [r, g, b];
+  }
+  if (normalized.length === 6) {
+    const r = parseInt(normalized.slice(0, 2), 16);
+    const g = parseInt(normalized.slice(2, 4), 16);
+    const b = parseInt(normalized.slice(4, 6), 16);
+    return [r, g, b];
+  }
+  return null;
+}
+
+function slateRgba(cssVar: string, alpha: number, fallback: [number, number, number]): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
+  const rgb = raw ? hexToRgb(raw) : null;
+  const [r, g, b] = rgb ?? fallback;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 type Props = {
   /** When true, ripples expand from the origin. */
   active: boolean;
@@ -103,6 +127,9 @@ export function AsciiRipple({ active, origin }: Props) {
       ctx!.textAlign = "center";
       ctx!.textBaseline = "middle";
 
+      const fillSlate400 = (alpha: number) => slateRgba("--slate-400", alpha, [148, 163, 184]);
+      const fillSlate500 = (alpha: number) => slateRgba("--slate-500", alpha, [100, 116, 139]);
+
       // Reduced motion: soft static halo of dots, no traveling wave.
       if (reducedRef.current) {
         for (let row = 0; row < rows; row += 1) {
@@ -113,7 +140,7 @@ export function AsciiRipple({ active, origin }: Props) {
             if (dist < 28 || dist > 120) continue;
             const a = fadeRef.current * 0.22 * (1 - (dist - 28) / 92);
             if (a < 0.02) continue;
-            ctx!.fillStyle = `rgba(148, 163, 184, ${a})`;
+            ctx!.fillStyle = fillSlate400(a);
             ctx!.fillText("·", x, y);
           }
         }
@@ -147,7 +174,7 @@ export function AsciiRipple({ active, origin }: Props) {
           if (ch === " ") continue;
 
           const alpha = Math.min(0.45, 0.08 + intensity * 0.55);
-          ctx!.fillStyle = `rgba(100, 116, 139, ${alpha})`;
+          ctx!.fillStyle = fillSlate500(alpha);
           ctx!.fillText(ch, x, y);
         }
       }
