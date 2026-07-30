@@ -58,7 +58,7 @@ export function EmptyState({ onAdd }: Props) {
           setFocused(true);
         }}
         onBlur={() => setFocused(false)}
-        className="relative z-10 inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800"
+        className="relative z-10 inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-4 text-sm font-medium text-background hover:opacity-90"
       >
         <FolderPlus className="h-4 w-4" />
         Add folders

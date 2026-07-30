@@ -76,13 +76,13 @@ export function Dialog({ spec, onDismiss }: { spec: DialogSpec; onDismiss: () =>
 
   const confirmButtonClass =
     spec.variant === "destructive"
-      ? "bg-red-700 text-white hover:bg-red-800"
-      : "bg-slate-900 text-white hover:bg-slate-800";
+      ? "bg-red-700 text-background hover:bg-red-800"
+      : "bg-foreground text-background hover:opacity-90";
 
   return (
     <div
       className="animate-dialog-scrim fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(30,41,59,0.18)" }}
+      style={{ backgroundColor: "var(--scrim)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) handleCancel();
       }}

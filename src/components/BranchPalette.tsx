@@ -176,7 +176,7 @@ export function BranchPalette({ repo, folder, currentBranch, onSelect, onClose }
   return (
     <div
       className="animate-palette-scrim fixed inset-0 z-50 flex justify-center"
-      style={{ backgroundColor: "rgba(30,41,59,0.18)", backdropFilter: "blur(6px)" }}
+      style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(6px)" }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
