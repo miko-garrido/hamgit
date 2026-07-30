@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Default Hamgit desktop permissions",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-start-dragging", "dialog:allow-open"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-theme",
+    "dialog:allow-open"
+  ]
 }
